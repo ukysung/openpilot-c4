@@ -315,7 +315,7 @@ class CarController(CarControllerBase):
     # ── ANGLE_CONTROL 차량: 개입 중/유예 중에는 EPS 각도추종 명령 차단 ──
     # apply_steer_req = False 가 되면 create_steering_messages 내부에서
     # LKAS_ANGLE_ACTIVE = 1(비활성) 로 전송되어 EPS가 핸들을 완전히 놓는다.
-    driver_overriding = self.driver_interv_active or (self.post_interv_hold_frames > 0)
+    driver_overriding = self.driver_interv_active or (self.driver_interv_hold_frames > 0)
     if angle_control:
       apply_steer_req = CC.latActive and not driver_overriding
 

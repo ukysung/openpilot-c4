@@ -259,7 +259,7 @@ class CarController(CarControllerBase):
     if CS.out.steeringPressed:
       # 개입 중: 즉시 EPS 제어 완전 해제
       self.driver_interv_active = True
-      self.post_interv_hold_frames = int(0.5 / DT_CTRL)  # 개입 종료 후 0.5초 유예
+      self.driver_interv_hold_frames = int(0.5 / DT_CTRL)  # 개입 종료 후 0.5초 유예
       self.lkas_max_torque = 0 #25
       self.recover_level   = 0.0
       # apply_angle_last를 실제 핸들각으로 실시간 동기화 (★핵심)
@@ -271,9 +271,9 @@ class CarController(CarControllerBase):
         self.apply_angle_last = CS.out.steeringAngleDeg
         self.driver_interv_active = False
 
-      if self.post_interv_hold_frames > 0:
+      if self.driver_interv_hold_frames > 0:
         # 유예 기간: EPS 제어 억제 유지
-        self.post_interv_hold_frames -= 1
+        self.driver_interv_hold_frames -= 1
         self.lkas_max_torque = 0
         self.recover_level   = 0.0
       else:

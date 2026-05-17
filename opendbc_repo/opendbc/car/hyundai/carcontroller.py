@@ -157,8 +157,8 @@ class CarController(CarControllerBase):
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
 
-    self.driver_interv_active    = False   # 현재 운전자 개입 중 여부
-    self.driver_interv_hold_frames = 0       # 개입 종료 후 유예 프레임 카운터
+    self.driver_interv_active      = False  # 현재 운전자 개입 중 여부
+    self.driver_interv_hold_frames = 0      # 개입 종료 후 유예 프레임 카운터
 
 
   def update(self, CC, CS, now_nanos):
@@ -175,12 +175,10 @@ class CarController(CarControllerBase):
         self.params.STEER_MAX = steerMax
       if steerDeltaUp > 0:
         self.steerDeltaUp = steerDeltaUp
-        #self.params.ANGLE_TORQUE_UP_RATE = steerDeltaUp
       else:
         self.steerDeltaUp = self.steerDeltaUpOrg
       if steerDeltaDown > 0:
         self.steerDeltaDown = steerDeltaDown
-        #self.params.ANGLE_TORQUE_DOWN_RATE = steerDeltaDown
       else:
         self.steerDeltaDown = self.steerDeltaDownOrg
 
@@ -226,9 +224,6 @@ class CarController(CarControllerBase):
                                                                        self.angle_limit_counter, self.max_angle_frames,
                                                                        MAX_ANGLE_CONSECUTIVE_FRAMES)
 
-    #apply_angle = apply_std_steer_angle_limits(actuators.steeringAngleDeg, self.apply_angle_last, CS.out.vEgoRaw,
-    #                                           CS.out.steeringAngleDeg, CC.latActive, self.params.ANGLE_LIMITS)
-
     apply_angle = apply_steer_angle_limits_physics(
       actuators.steeringAngleDeg,
       self.apply_angle_last,
@@ -240,7 +235,6 @@ class CarController(CarControllerBase):
       self.params.ANGLE_LIMITS.STEER_ANGLE_MAX
     )
 
-
     if angle_control:
       apply_steer_req = CC.latActive
 
@@ -250,80 +244,77 @@ class CarController(CarControllerBase):
     def _scale01(x, lo, hi):
       return _clip((x - lo) / (hi - lo), 0.0, 1.0)
 
-    angle_error = apply_angle - CS.out.steeringAngleDeg
-    abs_angle_error = abs(angle_error)
-
-    error_delta = self.prev_abs_angle_error - abs_angle_error
-
-
+    # ── 운전자 개입 감지 및 토크/각도 복귀 로직 ──
     if CS.out.steeringPressed:
       # 개입 중: 즉시 EPS 제어 완전 해제
-      self.driver_interv_active = True
+      self.driver_interv_active      = True
       self.driver_interv_hold_frames = int(0.5 / DT_CTRL)  # 개입 종료 후 0.5초 유예
-      self.lkas_max_torque = 0 #25
-      self.recover_level   = 0.0
-      # apply_angle_last를 실제 핸들각으로 실시간 동기화 (★핵심)
+      self.lkas_max_torque           = 0
+      self.recover_level             = 0.0
+      # apply_angle_last를 실제 핸들각으로 실시간 동기화
       self.apply_angle_last = CS.out.steeringAngleDeg
 
     else:
       if self.driver_interv_active:
         # 막 손을 뗀 순간 → apply_angle_last 동기화 확정
-        self.apply_angle_last = CS.out.steeringAngleDeg
-        self.driver_interv_active = False
+        self.apply_angle_last        = CS.out.steeringAngleDeg
+        self.driver_interv_active    = False
 
       if self.driver_interv_hold_frames > 0:
-        # 유예 기간: EPS 제어 억제 유지
+        # 유예 기간: EPS 제어 억제 유지, error 누적 방지
         self.driver_interv_hold_frames -= 1
-        self.lkas_max_torque = 0
-        self.recover_level   = 0.0
+        self.lkas_max_torque           = 0
+        self.recover_level             = 0.0
+        # 유예 중에는 prev_abs_angle_error 갱신하지 않음 (복귀 시 노이즈 방지)
+
       else:
+        # ── 정상 복귀: 여기서만 angle_error 계산 ──
+        # driver_overriding=False 인 상태이므로 apply_angle이 OP 목표각으로 정확함
+        angle_error     = apply_angle - CS.out.steeringAngleDeg
+        abs_angle_error = abs(angle_error)
+        error_delta     = self.prev_abs_angle_error - abs_angle_error
+
         target_torque = self.angle_max_torque
 
         max_steering_tq = self.params.STEER_DRIVER_ALLOWANCE * 0.7
         rate_ratio = max(20, max_steering_tq - abs(CS.out.steeringTorque)) / max_steering_tq
-        rate_up = self.params.ANGLE_TORQUE_UP_RATE * rate_ratio
+        rate_up   = self.params.ANGLE_TORQUE_UP_RATE   * rate_ratio
         rate_down = self.params.ANGLE_TORQUE_DOWN_RATE * rate_ratio
 
         recover_level = self.recover_level
 
-        # error_delta > 0 means actual steering angle and apply_angle are getting closer.
+        # error_delta > 0: 실제 조향각과 목표각이 가까워지는 중
         recover_factor = 0.0
         if error_delta > 0.02:
           recover_factor = _scale01(error_delta, 0.02, 0.30)
 
-        # Normal recovery is slow.
-        # If angle error is decreasing, recover faster.
-        recover_rate = 0.005 + recover_factor * 0.035
+        # 기본 복귀는 느리게, 오차가 줄어드는 중이면 더 빠르게
+        recover_rate  = 0.005 + recover_factor * 0.035
         recover_level = _clip(recover_level + recover_rate, 0.0, 1.0)
         self.recover_level = recover_level
 
-        # While recovering, limit available torque.
-        # recover_level = 0.0 -> 30%
-        # recover_level = 1.0 -> 100%
+        # recover_level=0.0 → 30%, recover_level=1.0 → 100%
         target_torque *= 0.3 + recover_level * 0.7
-
-        # If angle error is already converging, allow torque to come back a little faster.
-        rate_up *= 1.0 + recover_factor * 0.5
+        rate_up       *= 1.0 + recover_factor * 0.5
 
         if self.lkas_max_torque > target_torque:
           self.lkas_max_torque = max(self.lkas_max_torque - rate_down, target_torque)
         else:
-          self.lkas_max_torque = min(self.lkas_max_torque + rate_up, target_torque)
+          self.lkas_max_torque = min(self.lkas_max_torque + rate_up,   target_torque)
 
-    self.prev_abs_angle_error = abs_angle_error
+        # 개입/유예 중에는 갱신하지 않고 정상 복귀 중에만 갱신
+        self.prev_abs_angle_error = abs_angle_error
 
-    # ── ANGLE_CONTROL 차량: 개입 중/유예 중에는 EPS 각도추종 명령 차단 ──
-    # apply_steer_req = False 가 되면 create_steering_messages 내부에서
-    # LKAS_ANGLE_ACTIVE = 1(비활성) 로 전송되어 EPS가 핸들을 완전히 놓는다.
+    # ── ANGLE_CONTROL 차량: 개입/유예 중 EPS 각도추종 명령 차단 ──
     driver_overriding = self.driver_interv_active or (self.driver_interv_hold_frames > 0)
     if angle_control:
       apply_steer_req = CC.latActive and not driver_overriding
 
     if not CC.latActive:
-      apply_torque = 0
+      apply_torque     = 0
       self.lkas_max_torque = 0
 
-    # 개입 중/유예 중에는 실제 핸들각을 추적, 정상 시에는 목표각 추적
+    # 개입/유예 중에는 실제 핸들각 추적, 정상 시에는 목표각 추적
     if driver_overriding:
       self.apply_angle_last = CS.out.steeringAngleDeg
     else:
@@ -365,8 +356,6 @@ class CarController(CarControllerBase):
       self.blinking_signal = True
     elif self.frame % self.blinking_frame == self.blinking_frame / 2:
       self.blinking_signal = False
-
-
 
     can_sends = []
 
@@ -460,7 +449,6 @@ class CarController(CarControllerBase):
         #jerk = 3.0 if actuators.longControlState == LongCtrlState.pid else 1.0
         use_fca = self.CP.flags & HyundaiFlags.USE_FCA.value
         if camera_scc:
-
           can_sends.extend(hyundaican.create_acc_commands_scc(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                           hud_control, set_speed_in_units, stopping,
                                                           CC.cruiseControl.override, casper_opt, CS, self.soft_hold_mode))
@@ -468,7 +456,6 @@ class CarController(CarControllerBase):
           can_sends.extend(hyundaican.create_acc_commands(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                 hud_control, set_speed_in_units, stopping,
                                                 CC.cruiseControl.override, use_fca, self.CP, CS, self.soft_hold_mode))
-
 
       # 20 Hz LFA MFA message
       if self.frame % 5 == 0 and self.CP.flags & HyundaiFlags.SEND_LFA.value:
@@ -520,7 +507,6 @@ class CarController(CarControllerBase):
           can_sends.append(hyundaican.create_clu11_button(self.packer, self.frame, CS.clu11, send_button, self.CP))
 
     else:
-
       # carrot.. 왜 alt_cruise_button는 값이 리스트일까?, 그리고 왜? 빈데이터가 들어오는것일까?
       if CS.cruise_buttons_msg is not None and self.CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS:
         try:
@@ -542,7 +528,6 @@ class CarController(CarControllerBase):
               #can_sends.append(hyundaicanfd.create_acc_cancel(self.packer, self.CP, self.CAN, CS.scc_control))
               if self.cruise_buttons_msg_values is not None:
                 can_sends.append(hyundaicanfd.alt_cruise_buttons(self.packer, self.CP, self.CAN, Buttons.CANCEL, self.cruise_buttons_msg_values, self.cruise_buttons_msg_cnt))
-
             else:
               for _ in range(20):
                 can_sends.append(hyundaicanfd.create_buttons(self.packer, self.CP, self.CAN, CS.buttons_counter+1, Buttons.CANCEL))
@@ -580,7 +565,6 @@ class CarController(CarControllerBase):
         self.LFA_trigger = trigger_start
 
   def canfd_speed_control_pcm(self, CC, CS, cruise_buttons_msg_values):
-
     alt_buttons = True if self.CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS else False
 
     if alt_buttons and cruise_buttons_msg_values is None:
@@ -645,8 +629,6 @@ class CarController(CarControllerBase):
 
     self.prev_clu_speed = current
     send_button_allowed = (self.frame - self.last_button_frame) > self.button_wait
-    #CC.debugTextCC = "{} speed_diff={:.1f},{:.0f}/{:.0f}, button={}, button_wait={}, count={}".format(
-    #  send_button_allowed, speed_diff, target, current, send_button, self.button_wait, self.button_spamming_count)
 
     if send_button_allowed or activate_cruise or (CC.cruiseControl.resume and self.frame % 2 == 0):
       self.button_spamming_count = self.button_spamming_count + 1 if send_button == Buttons.RES_ACCEL else self.button_spamming_count - 1
@@ -710,4 +692,3 @@ class HyundaiJerk:
         self.jerk_l = min(max(1.0, -self.jerk * 4.0), jerk_max_l)
         self.cb_upper = np.clip(0.9 + accel * 0.2, 0, 1.2)
         self.cb_lower = np.clip(0.8 + accel * 0.2, 0, 1.2)
-

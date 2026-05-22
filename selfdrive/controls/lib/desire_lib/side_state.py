@@ -56,7 +56,7 @@ class SideState:
   # ── BSD hold ───────────────────────────────────────────────────
   bsd_hold_counter: int  = 0
   bsd_detected_now: bool = False
-  bsd_clear_count:  int  = 0
+  bsd_clear_count: int = field(default_factory=lambda: int(10.0 / DT_MDL))
 
   # ── 차선 변경 가능 여부 (용도별 3종) ──────────────────────────
   # lane_change_available_geom  : 기하학적 조건만 (차선 폭·도로 경계)
@@ -193,7 +193,7 @@ class SideState:
     self.bsd_detected_now = bool(blindspot) and (not ignore_bsd)
 
     # 코너 레이더 없는 차량은 hold 시간을 늘려 보수적으로 동작
-    effective_hold_sec = bsd_hold_sec if self.corner_radar_active else max(bsd_hold_sec, 3.5)
+    effective_hold_sec = bsd_hold_sec #if self.corner_radar_active else max(bsd_hold_sec, 3.5)
 
     if self.bsd_detected_now:
       self.bsd_hold_counter = int(effective_hold_sec / DT_MDL)

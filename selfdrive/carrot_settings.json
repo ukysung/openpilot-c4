@@ -2310,7 +2310,7 @@
       "group": "차선변경",
       "name": "BsdHoldSec",
       "title": "BSD감지유지시간(25)x0.1s",
-      "descr": "BSD 감지 후 차선변경을 차단하는 유지 시간\n25=2.5초",
+      "descr": "BSD 감지 해제 후 차선변경 차단 유지 시간\n25=2.5초",
       "egroup": "LANE_CHANGE",
       "etitle": "BSD Hold Time(25)x0.1s",
       "edescr": "How long to block lane change after BSD detection, 25=2.5s",

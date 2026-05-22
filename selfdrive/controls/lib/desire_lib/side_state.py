@@ -360,18 +360,18 @@ class SideState:
 
     appr_norm = float(np.clip(self.front_approach, 0.0, self._APPR_MAX_REF))
 
-    # ── 거리 임계 보간
-    near_lo = float(np.interp(gap, [1.0, 6.0], [6.0,  12.0]))
-    far_lo  = float(np.interp(gap, [1.0, 6.0], [15.0, 35.0]))
-    dist_th = float(np.interp(appr_norm,
-                              [self._APPR_MIN_REF, self._APPR_MAX_REF],
-                              [near_lo, far_lo]))
+    # ── 거리 임계 보간 (측전방: 가깝게)
+    dist_th_min = float(np.interp(gap, [1.0, 6.0], [4.0,  8.0]))
+    dist_th_max = float(np.interp(gap, [1.0, 6.0], [10.0, 22.0]))
+    dist_th     = float(np.interp(appr_norm,
+                                  [self._APPR_MIN_REF, self._APPR_MAX_REF],
+                                  [dist_th_min, dist_th_max]))
 
-    # ── TTC 임계 보간
-    ttc_lo = float(np.interp(gap, [1.0, 6.0], [2.0, 4.5]))
-    ttc_th = float(np.interp(appr_norm,
-                             [self._APPR_MIN_REF, self._APPR_MAX_REF],
-                             [ttc_lo, ttc_lo * 1.5]))
+    # ── TTC 임계 보간 (측전방: 가깝게)
+    ttc_th_min = float(np.interp(gap, [1.0, 6.0], [1.5, 3.5]))
+    ttc_th     = float(np.interp(appr_norm,
+                                [self._APPR_MIN_REF, self._APPR_MAX_REF],
+                                [ttc_th_min, ttc_th_min * 1.5]))
 
     dist_block = d_cur < dist_th
 
@@ -426,18 +426,18 @@ class SideState:
 
     appr_norm = float(np.clip(self.rear_approach, 0.0, self._APPR_MAX_REF))
 
-    # ── 거리 임계 보간
-    near_lo = float(np.interp(gap, [1.0, 6.0], [5.0,  10.0]))
-    far_lo  = float(np.interp(gap, [1.0, 6.0], [12.0, 28.0]))
-    dist_th = float(np.interp(appr_norm,
-                              [self._APPR_MIN_REF, self._APPR_MAX_REF],
-                              [near_lo, far_lo]))
+    # ── 거리 임계 보간 (측후방: 멀게)
+    dist_th_min = float(np.interp(gap, [1.0, 6.0], [8.0,  15.0]))
+    dist_th_max = float(np.interp(gap, [1.0, 6.0], [20.0, 45.0]))
+    dist_th     = float(np.interp(appr_norm,
+                                  [self._APPR_MIN_REF, self._APPR_MAX_REF],
+                                  [dist_th_min, dist_th_max]))
 
-    # ── TTC 임계 보간
-    ttc_lo = float(np.interp(gap, [1.0, 6.0], [2.5, 5.5]))
-    ttc_th = float(np.interp(appr_norm,
-                             [self._APPR_MIN_REF, self._APPR_MAX_REF],
-                             [ttc_lo, ttc_lo * 1.5]))
+    # ── TTC 임계 보간 (측후방: 멀게)
+    ttc_th_min = float(np.interp(gap, [1.0, 6.0], [3.0, 6.0]))
+    ttc_th     = float(np.interp(appr_norm,
+                                [self._APPR_MIN_REF, self._APPR_MAX_REF],
+                                [ttc_th_min, ttc_th_min * 1.5]))
 
     dist_block = d_cur < dist_th
 

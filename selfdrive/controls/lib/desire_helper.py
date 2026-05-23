@@ -11,7 +11,7 @@ from openpilot.selfdrive.controls.lib.desire_lib.constants import (
   DESIRES, TURN_DESIRES
 )
 from openpilot.selfdrive.controls.lib.desire_lib.side_state import SideState
-
+from openpilot.selfdrive.controls.lib.desire_lib.maneuver_classifier import classify_maneuver_type
 class DesireHelper:
   def __init__(self):
     self.params = Params()

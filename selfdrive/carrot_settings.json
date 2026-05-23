@@ -1586,22 +1586,6 @@
       "cdescr": "向路缘/弯道内侧修正"
     },
     {
-      "group": "조향일반",
-      "name": "LaneChangeDelay",
-      "title": "차선변경 지연시간x0.1s(0)",
-      "descr": "방향지시등을 켜고 설정시간 후 차선변경합니다.",
-      "egroup": "LAT",
-      "etitle": "LaneChange delayx0.1s(0)",
-      "edescr": "Changes lanes after the set time once the turn signal is activated",
-      "min": 0,
-      "max": 100,
-      "default": 0,
-      "unit": 10,
-      "cgroup": "转向",
-      "ctitle": "变道延迟 x0.1s(0)",
-      "cdescr": "开启转向灯后在设定时间后变道"
-    },
-    {
       "group": "시작",
       "name": "HapticFeedbackWhenSpeedCamera",
       "title": "핸들햅틱기능사용(0)",
@@ -2337,6 +2321,22 @@
       "cgroup": "转向设置",
       "ctitle": "变道使用转向力矩",
       "cdescr": "0: 立即变道, 1: 需要力矩 (轻拨), -1: 自动变道关闭"
+    },
+    {
+      "group": "转向设置",
+      "name": "LaneChangeDelay",
+      "title": "차선변경 지연시간x0.1s(0)",
+      "descr": "방향지시등을 켜고 설정시간 후 차선변경합니다.",
+      "egroup": "LANE_CHANGE",
+      "etitle": "LaneChange delayx0.1s(0)",
+      "edescr": "Changes lanes after the set time once the turn signal is activated",
+      "min": 0,
+      "max": 100,
+      "default": 0,
+      "unit": 10,
+      "cgroup": "转向设置",
+      "ctitle": "变道延迟 x0.1s(0)",
+      "cdescr": "开启转向灯后在设定时间后变道"
     },
     {
       "group": "화면",

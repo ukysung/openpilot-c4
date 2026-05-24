@@ -189,14 +189,12 @@ class DesireHelper:
         object_clear_sec   = self.object_clear_sec,
     )
 
-
     def line_ok(raw, check_mode):
-      color = raw // 10
       ltype = raw % 10
       if check_mode == 0:
-        return color == 0
+          return raw < 20         # carrot-wip 원본과 동일
       else:
-        return ltype in (0, 5)
+          return ltype in (0, 5)
 
     left_line_ok  = line_ok(self.left.lane_line_info_raw,  self.laneLineCheck)
     right_line_ok = line_ok(self.right.lane_line_info_raw, self.laneLineCheck)

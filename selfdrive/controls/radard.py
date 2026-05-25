@@ -52,6 +52,18 @@ class Track:
     self.in_lane_prob = 0.0
     self.in_lane_prob_future = 0.0
 
+    self.dRel = 0.0
+    self.yRel = 0.0
+    self.vRel = 0.0
+    self.vLead = 0.0
+    self.vLeadK = 0.0
+    self.aLead = 0.0
+    self.aLeadK = 0.0
+    self.jLead = 0.0
+    self.yvLead = 0.0
+    self.dRel_future = 0.0
+    self.yRel_future = 0.0
+    self.dPath_future = 0.0
     self.dPath = 0.0
 
     # ---- noise filter state (new) ----
@@ -61,9 +73,9 @@ class Track:
 
   def update(self, md, pt, ready, radar_reaction_factor, radar_lat_factor):
     prev_measured = self.measured
-    prev_dRel = getattr(self, "dRel", pt.dRel)
-    prev_yRel = getattr(self, "yRel", pt.yRel)
-    prev_vLead = getattr(self, "vLead", pt.vLead)
+    prev_dRel = self.dRel
+    prev_yRel = self.yRel
+    prev_vLead = self.vLead
 
     self.dRel = pt.dRel
     self.yRel = pt.yRel

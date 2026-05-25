@@ -28,6 +28,7 @@ RADAR_TO_CENTER = 2.7   # (deprecated) RADAR is ~ 2.7m ahead from center of car
 RADAR_TO_CAMERA = 1.52  # RADAR is ~ 1.5m ahead from center of mesh frame
 
 STICKY_SELECTED_COUNT_MAX = int(2.0 / DT_MDL)
+STICKY_MAX_DPATH = 1.2
 
 
 def laplacian_pdf(x: float, mu: float, b: float):
@@ -65,6 +66,7 @@ class Track:
     self.yRel_future = 0.0
     self.dPath_future = 0.0
     self.dPath = 0.0
+    self.sticky_dPath = 0.0
 
     # ---- noise filter state (new) ----
     self._vLead_last = 0.0
@@ -104,6 +106,12 @@ class Track:
     self.dRel_future = self.dRel + self.vLead * radar_lat_factor
     if ready:
       self.d_path(md)
+      if self.selected_count > 0:
+        self.sticky_dPath = self.path_d_path(md)
+
+      if self.selected_count > 0 and abs(self.sticky_dPath) > STICKY_MAX_DPATH:
+        self.selected_count = 0
+        self.is_stopped_car_count = 0
 
     a_lead_threshold = 0.5 * radar_reaction_factor
     if abs(self.aLead) < a_lead_threshold and abs(self.jLead) < 0.5:
@@ -129,6 +137,9 @@ class Track:
 
     self.dPath, self.in_lane_prob = d_path_interp(self.dRel, self.yRel)
     self.dPath_future, self.in_lane_prob_future = d_path_interp(self.dRel_future, self.yRel_future)
+
+  def path_d_path(self, md) -> float:
+    return float(self.yRel + np.interp(self.dRel, md.position.x, md.position.y))
 
   # ---- noise suppression only when cnt>=2 ----
   def vlead_for_matching(self, dv_max: float = 4.0, alpha: float = 0.35) -> float:
@@ -598,10 +609,16 @@ class RadarD:
     pm.send("radarState", radar_msg)
 
   def get_sticky_track(self, tracks: dict[int, Track]) -> Track | None:
-    sticky_tracks = [
-      t for t in tracks.values()
-      if t.measured and t.cnt > 2 and t.selected_count > 0 and 1.0 < t.dRel < 150.0
-    ]
+    sticky_tracks = []
+    for t in tracks.values():
+      if t.selected_count > 0 and abs(t.sticky_dPath) > STICKY_MAX_DPATH:
+        t.selected_count = 0
+        t.is_stopped_car_count = 0
+        continue
+
+      if t.measured and t.cnt > 2 and t.selected_count > 0 and 1.0 < t.dRel < 150.0:
+        sticky_tracks.append(t)
+
     if not sticky_tracks:
       return None
 

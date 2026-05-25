@@ -293,16 +293,33 @@ def model_line_lateral_at_forward(
     points: tuple[ModelPathPoint, ...],
     relative_forward_m: float,
     lateral_shift_m: float = 0.0,
+    use_catmull_rom: bool = False,
 ) -> float | None:
     if not points or relative_forward_m < 0.0:
         return None
     previous = points[0]
     if relative_forward_m <= previous.forward_m:
         return previous.lateral_m + lateral_shift_m
-    for point in points[1:]:
+    for index in range(1, len(points)):
+        point = points[index]
         if relative_forward_m <= point.forward_m:
             span = max(0.001, point.forward_m - previous.forward_m)
             amount = clamp((relative_forward_m - previous.forward_m) / span, 0.0, 1.0)
+            if use_catmull_rom:
+                p0 = points[index - 2].lateral_m if index >= 2 else previous.lateral_m
+                p1 = previous.lateral_m
+                p2 = point.lateral_m
+                p3 = points[index + 1].lateral_m if index + 1 < len(points) else point.lateral_m
+                t = amount
+                t2 = t * t
+                t3 = t2 * t
+                interpolated = 0.5 * (
+                    (2.0 * p1)
+                    + (-p0 + p2) * t
+                    + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+                    + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
+                )
+                return interpolated + lateral_shift_m
             return previous.lateral_m + (point.lateral_m - previous.lateral_m) * amount + lateral_shift_m
         previous = point
     return None
@@ -319,6 +336,7 @@ def strip_between_model_lines(
     color: Color,
     height_m: float,
     extend_before_model: bool = False,
+    use_catmull_rom: bool = False,
 ) -> MeshStrip | None:
     if len(left_points) < 2 or len(right_points) < 2:
         return None
@@ -343,12 +361,12 @@ def strip_between_model_lines(
         left_lateral = (
             left_points[0].lateral_m + left_lateral_shift_m
             if extend_before_model and relative_forward_m < left_points[0].forward_m
-            else model_line_lateral_at_forward(left_points, relative_forward_m, left_lateral_shift_m)
+            else model_line_lateral_at_forward(left_points, relative_forward_m, left_lateral_shift_m, use_catmull_rom)
         )
         right_lateral = (
             right_points[0].lateral_m + right_lateral_shift_m
             if extend_before_model and relative_forward_m < right_points[0].forward_m
-            else model_line_lateral_at_forward(right_points, relative_forward_m, right_lateral_shift_m)
+            else model_line_lateral_at_forward(right_points, relative_forward_m, right_lateral_shift_m, use_catmull_rom)
         )
         if left_lateral is None or right_lateral is None:
             continue
@@ -397,11 +415,12 @@ def lane_floor_strip(
             color,
             height_m,
             extend_before_model=True,
+            use_catmull_rom=state.lane_smoothing_enabled,
         )
         if model_strip is not None:
             return model_strip
 
-    if route_mode:
+    if route_mode or state.lane_smoothing_enabled:
         return None
     return strip_between_offsets(
         lane_center_offset - 0.5,
@@ -568,6 +587,7 @@ def lane_marking_segments_for_marking(
     start_m: float,
     end_m: float,
     extend_before_model: bool = False,
+    drop_steering_fallback: bool = False,
 ) -> tuple[tuple[Vec3, ...], ...]:
     if marking.model_points:
         centerline = model_line_centerline(
@@ -589,6 +609,9 @@ def lane_marking_segments_for_marking(
             if marking.style == "solid":
                 return (centerline,)
             return dashed_centerline_segments(centerline)
+
+    if drop_steering_fallback:
+        return ()
 
     if marking.style == "solid":
         return (lane_centerline(marking.offset, steering, lane_width_m, start_m, end_m, 80, 0.0),)
@@ -1920,6 +1943,7 @@ def build_cluster_scene(
                 road_start_m,
                 road_end_m,
                 extend_before_model=True,
+                drop_steering_fallback=state.lane_smoothing_enabled,
             )
             strip_groups = lane_marking_strip_groups_from_segments(marking_segments, marking_specs)
         backing_strips, foreground_strips = strip_groups

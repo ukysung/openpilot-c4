@@ -40,3 +40,30 @@ system/platform fonts if KaiGen is not present.
 USB frame upload runs in no-ACK mode by default because some TURZX panels accept
 image data but never return a frame-upload response. Use `--usb-wait-frame-ack`
 only when testing a panel/driver combination known to reply after each frame.
+
+## Lane/path smoothing
+
+`--lane-smoothing smooth` (default) enables four data-side stabilizers without
+touching the camera, scene intent, or vehicle 3D rendering. Pass
+`--lane-smoothing legacy` to fall back to the raw modelV2 + synthetic-curve
+behavior:
+
+1. EMA-filter modelV2 lane lines, road edges, and the planned path
+   (`alpha=CLUSTER_LANE_ALPHA`, default 0.25 → ~0.2s time constant).
+2. Heavier EMA on `lane_width_m` (alpha × 0.4 → ~0.5s) and `lane_center_offset_m`
+   (alpha) to stop frame-to-frame lateral shift jitter.
+3. Drop the `steering × forward²` synthetic-curve fallback. Lanes without
+   modelV2 points simply disappear instead of wobbling.
+4. Catmull-Rom interpolation between the 33 sparse modelV2 sample points for
+   smoother centerlines.
+
+Tune the filter strength without editing code:
+
+```bash
+CLUSTER_LANE_ALPHA=0.18 python selfdrive/carrot/cluster_run.py --input route \
+  --route /data/media/0/realdata/<route_id> --output usb --route-loop \
+  --lane-smoothing smooth
+```
+
+Range: 0.02–1.0. Lower = smoother but slower lane-change response. Recommended
+0.15–0.35.

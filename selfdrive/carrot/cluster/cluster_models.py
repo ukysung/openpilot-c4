@@ -199,6 +199,7 @@ class ClusterUiState:
     lateral_plan_curvatures: tuple[float, ...] = ()
     lateral_plan_curvature_rates: tuple[float, ...] = ()
     display_speed_kph: float | None = None
+    lane_smoothing_enabled: bool = False
 
 
 @dataclass(frozen=True, slots=True)

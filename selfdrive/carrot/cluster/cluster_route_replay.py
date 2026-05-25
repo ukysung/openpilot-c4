@@ -37,7 +37,67 @@ from cluster_models import (
     RadarPoint,
     RouteOverlay,
 )
+from cluster_config import LANE_SMOOTH_DEFAULT_ALPHA
 from cluster_utils import clamp, smoothstep
+
+
+def _lane_smooth_alpha() -> float:
+    raw = os.environ.get("CLUSTER_LANE_ALPHA")
+    if raw is None:
+        return LANE_SMOOTH_DEFAULT_ALPHA
+    try:
+        return clamp(float(raw), 0.02, 1.0)
+    except ValueError:
+        return LANE_SMOOTH_DEFAULT_ALPHA
+
+
+LANE_SMOOTH_ALPHA = _lane_smooth_alpha()
+
+
+def blend_model_line(
+    old: tuple[ModelPathPoint, ...],
+    new: tuple[ModelPathPoint, ...],
+    alpha: float,
+) -> tuple[ModelPathPoint, ...]:
+    if not new:
+        return new
+    if not old:
+        return new
+    pair_count = min(len(old), len(new))
+    if pair_count < 2:
+        return new
+    one_minus_alpha = 1.0 - alpha
+    blended: list[ModelPathPoint] = []
+    for index in range(pair_count):
+        old_point = old[index]
+        new_point = new[index]
+        if abs(old_point.forward_m - new_point.forward_m) > 0.5:
+            return new
+        new_lateral = old_point.lateral_m * one_minus_alpha + new_point.lateral_m * alpha
+        blended.append(
+            ModelPathPoint(
+                forward_m=new_point.forward_m,
+                lateral_m=new_lateral,
+                lateral_std_m=new_point.lateral_std_m,
+                speed_mps=new_point.speed_mps,
+                accel_mps2=new_point.accel_mps2,
+                orientation_rad=new_point.orientation_rad,
+                orientation_rate_rps=new_point.orientation_rate_rps,
+            )
+        )
+    if len(new) > pair_count:
+        blended.extend(new[pair_count:])
+    return tuple(blended)
+
+
+def blend_model_lines(
+    old: tuple[tuple[ModelPathPoint, ...], ...],
+    new: tuple[tuple[ModelPathPoint, ...], ...],
+    alpha: float,
+) -> tuple[tuple[ModelPathPoint, ...], ...]:
+    if len(old) != len(new):
+        return new
+    return tuple(blend_model_line(old_line, new_line, alpha) for old_line, new_line in zip(old, new))
 
 
 ROUTE_SCHEMA_CACHE_NAME = "carrotpilot_cluster_capnp_v1"
@@ -206,11 +266,12 @@ class RouteReplayWorkerResult:
 
 
 class RouteLogPreloadWorker:
-    def __init__(self) -> None:
+    def __init__(self, lane_smoothing_enabled: bool = False) -> None:
         self._context = mp.get_context("spawn")
         self._requests: Any | None = None
         self._results: Any | None = None
         self._process: mp.Process | None = None
+        self._lane_smoothing_enabled = bool(lane_smoothing_enabled)
         self._start()
 
     def request(self, generation: int, file_index: int, file_path: Path) -> None:
@@ -275,14 +336,14 @@ class RouteLogPreloadWorker:
         self._results = self._context.Queue(maxsize=1)
         self._process = self._context.Process(
             target=route_log_preload_worker,
-            args=(self._requests, self._results, ROUTE_REPLAY_PRELOAD_NICE),
+            args=(self._requests, self._results, ROUTE_REPLAY_PRELOAD_NICE, self._lane_smoothing_enabled),
             name="route-log-preload",
             daemon=True,
         )
         self._process.start()
 
 
-def route_log_preload_worker(requests: Any, results: Any, nice_increment: int) -> None:
+def route_log_preload_worker(requests: Any, results: Any, nice_increment: int, lane_smoothing_enabled: bool = False) -> None:
     if nice_increment > 0:
         try:
             os.nice(nice_increment)
@@ -290,7 +351,7 @@ def route_log_preload_worker(requests: Any, results: Any, nice_increment: int) -
             pass
 
     log_schema = load_openpilot_log_schema()
-    parser = RouteLogParser()
+    parser = RouteLogParser(lane_smoothing_enabled=lane_smoothing_enabled)
     while True:
         command, generation, file_index, file_path_text = requests.get()
         if command == "stop":
@@ -316,16 +377,18 @@ class RouteReplaySource:
     def __init__(
         self,
         source_files: list[Path],
+        lane_smoothing_enabled: bool = False,
     ) -> None:
         if not source_files:
             raise RuntimeError("route contains no log files")
+        self.lane_smoothing_enabled = bool(lane_smoothing_enabled)
         self.source_files = source_files
         self.frames: list[RouteReplayFrame] = []
         self.times: list[float] = []
         self.duration = 0.0
         self.video_segments: list[RouteVideoSegment] = []
         self._video_reader = RouteVideoFrameReader(self.video_segments)
-        self._preload_worker = RouteLogPreloadWorker()
+        self._preload_worker = RouteLogPreloadWorker(lane_smoothing_enabled=self.lane_smoothing_enabled)
         self._first_t: float | None = None
         self._next_file_index = 0
         self._loaded_chunks: list[RouteReplayChunk] = []
@@ -346,12 +409,13 @@ class RouteReplaySource:
         log_kind: str = "qlog",
         start_segment: int | None = None,
         max_segments: int | None = None,
+        lane_smoothing_enabled: bool = False,
     ) -> RouteReplaySource:
         files = discover_route_logs(route_path, log_kind, start_segment, max_segments)
         if not files:
             raise RuntimeError(f"no {LOG_FILENAMES[log_kind]} files found under {route_path}")
 
-        return cls(files)
+        return cls(files, lane_smoothing_enabled=lane_smoothing_enabled)
 
     def is_finished(self, playback_seconds: float, loop: bool = False) -> bool:
         if not loop:
@@ -368,17 +432,17 @@ class RouteReplaySource:
             playback_seconds %= self.duration
         self._ensure_loaded(playback_seconds)
         if self.duration <= 0.0:
-            state = frame_to_state(self.frames[0])
+            state = self._tag_smoothing(frame_to_state(self.frames[0]))
             return self._with_overlay(state, self.frames[0], 0.0, loop) if include_overlay else state
         if not loop or self._end_of_route:
             playback_seconds = clamp(playback_seconds, 0.0, self.duration)
 
         right_index = bisect_right(self.times, playback_seconds)
         if right_index <= 0:
-            state = frame_to_state(self.frames[0])
+            state = self._tag_smoothing(frame_to_state(self.frames[0]))
             return self._with_overlay(state, self.frames[0], playback_seconds, loop) if include_overlay else state
         if right_index >= len(self.frames):
-            state = frame_to_state(self.frames[-1])
+            state = self._tag_smoothing(frame_to_state(self.frames[-1]))
             return self._with_overlay(state, self.frames[-1], playback_seconds, loop) if include_overlay else state
 
         left = self.frames[right_index - 1]
@@ -386,8 +450,13 @@ class RouteReplaySource:
         span = max(0.001, right.t - left.t)
         amount = clamp((playback_seconds - left.t) / span, 0.0, 1.0)
         frame = blend_frames(left, right, amount)
-        state = frame_to_state(frame)
+        state = self._tag_smoothing(frame_to_state(frame))
         return self._with_overlay(state, frame, playback_seconds, loop) if include_overlay else state
+
+    def _tag_smoothing(self, state: ClusterUiState) -> ClusterUiState:
+        if state.lane_smoothing_enabled == self.lane_smoothing_enabled:
+            return state
+        return replace(state, lane_smoothing_enabled=self.lane_smoothing_enabled)
 
     def close(self) -> None:
         self._preload_generation += 1
@@ -745,12 +814,15 @@ class RouteVideoFrameReader:
 
 
 class RouteLogParser:
-    def __init__(self) -> None:
+    def __init__(self, lane_smoothing_enabled: bool = False) -> None:
+        self.lane_smoothing_enabled = bool(lane_smoothing_enabled)
         self.speed_limit_kph: int | None = None
         self.nav_speed_limit_kph: int | None = None
         self.cruise_kph: int | None = None
         self.controls_enabled: bool | None = None
         self.lane_width_m = DEFAULT_LANE_WIDTH_M
+        self.smoothed_lane_width_m: float | None = None
+        self.smoothed_lane_center_offset_m: float | None = None
         self.left_lane_y_m: float | None = None
         self.right_lane_y_m: float | None = None
         self.outer_left_lane_y_m: float | None = None
@@ -919,9 +991,11 @@ class RouteLogParser:
         right_signal = bool(safe_get(car_state, "rightBlinker", False))
         left_blindspot = bool(safe_get(car_state, "leftBlindspot", False))
         right_blindspot = bool(safe_get(car_state, "rightBlindspot", False))
+        smoothed_center = self._smooth_lane_center_offset(lane_values["center"])
+        effective_center = smoothed_center if self.lane_smoothing_enabled else lane_values["center"]
         observed_ego_lane_offset = 0.0
-        if lane_values["center"] is not None:
-            observed_ego_lane_offset = clamp(-lane_values["center"] / lane_values["width"], -1.25, 1.25)
+        if effective_center is not None:
+            observed_ego_lane_offset = clamp(-effective_center / lane_values["width"], -1.25, 1.25)
         (
             lane_change,
             lane_change_phase,
@@ -951,7 +1025,7 @@ class RouteLogParser:
             left_blindspot=left_blindspot,
             right_blindspot=right_blindspot,
             lane_width_m=lane_values["width"],
-            lane_center_offset_m=lane_values["center"],
+            lane_center_offset_m=effective_center,
             left_lane_offset=lane_values["left_offset"],
             right_lane_offset=lane_values["right_offset"],
             left_lane_visible=lane_values["left_visible"],
@@ -1052,7 +1126,7 @@ class RouteLogParser:
             if left_y is not None and right_y is not None and right_y > left_y:
                 self.left_lane_y_m = left_y
                 self.right_lane_y_m = right_y
-                self.lane_width_m = clamp(right_y - left_y, 2.4, 4.6)
+                self._set_lane_width(clamp(right_y - left_y, 2.4, 4.6))
                 self.lane_position_source = "drivingModelData"
             self.left_lane_prob = clamp(safe_float(lane_meta, "leftProb", self.left_lane_prob), 0.0, 1.0)
             self.right_lane_prob = clamp(safe_float(lane_meta, "rightProb", self.right_lane_prob), 0.0, 1.0)
@@ -1080,14 +1154,18 @@ class RouteLogParser:
         lane_lines = safe_get(model, "laneLines")
         lane_probs = safe_get(model, "laneLineProbs")
         if lane_lines is not None:
-            self.model_lane_lines = tuple(model_line_points(lane_lines[index]) for index in range(min(len(lane_lines), 4)))
+            new_lane_lines = tuple(model_line_points(lane_lines[index]) for index in range(min(len(lane_lines), 4)))
+            if self.lane_smoothing_enabled:
+                self.model_lane_lines = blend_model_lines(self.model_lane_lines, new_lane_lines, LANE_SMOOTH_ALPHA)
+            else:
+                self.model_lane_lines = new_lane_lines
         if lane_lines is not None and len(lane_lines) >= 3:
             left_y = first_list_value(safe_get(lane_lines[1], "y"))
             right_y = first_list_value(safe_get(lane_lines[2], "y"))
             if left_y is not None and right_y is not None and right_y > left_y:
                 self.left_lane_y_m = left_y
                 self.right_lane_y_m = right_y
-                self.lane_width_m = clamp(right_y - left_y, 2.4, 4.6)
+                self._set_lane_width(clamp(right_y - left_y, 2.4, 4.6))
                 self.lane_position_source = "modelV2"
         if lane_lines is not None and len(lane_lines) >= 4:
             self.outer_left_lane_y_m = first_list_value(safe_get(lane_lines[0], "y"))
@@ -1102,7 +1180,11 @@ class RouteLogParser:
         road_edges = safe_get(model, "roadEdges")
         road_edge_stds = safe_get(model, "roadEdgeStds")
         if road_edges is not None:
-            self.model_road_edges = tuple(model_line_points(road_edges[index]) for index in range(min(len(road_edges), 2)))
+            new_road_edges = tuple(model_line_points(road_edges[index]) for index in range(min(len(road_edges), 2)))
+            if self.lane_smoothing_enabled:
+                self.model_road_edges = blend_model_lines(self.model_road_edges, new_road_edges, LANE_SMOOTH_ALPHA)
+            else:
+                self.model_road_edges = new_road_edges
         if road_edges is not None and len(road_edges) >= 2:
             self.left_road_edge_y_m = first_list_value(safe_get(road_edges[0], "y"))
             self.right_road_edge_y_m = first_list_value(safe_get(road_edges[1], "y"))
@@ -1112,7 +1194,10 @@ class RouteLogParser:
 
         model_path = model_path_points_from_model_v2(model)
         if model_path:
-            self.model_path = model_path
+            if self.lane_smoothing_enabled:
+                self.model_path = blend_model_line(self.model_path, model_path, LANE_SMOOTH_ALPHA)
+            else:
+                self.model_path = model_path
             self.model_path_source = "modelV2.position"
 
         action = safe_get(model, "action")
@@ -1127,10 +1212,36 @@ class RouteLogParser:
             self._update_model_lane_change_values(meta)
             self._update_model_meta_values(meta, model)
 
+    def _set_lane_width(self, new_width: float) -> None:
+        if not self.lane_smoothing_enabled:
+            self.lane_width_m = new_width
+            self.smoothed_lane_width_m = new_width
+            return
+        if self.smoothed_lane_width_m is None:
+            self.smoothed_lane_width_m = new_width
+        else:
+            alpha = LANE_SMOOTH_ALPHA * 0.4   # ~2.5x stronger filter than model points
+            self.smoothed_lane_width_m = self.smoothed_lane_width_m * (1.0 - alpha) + new_width * alpha
+        self.lane_width_m = self.smoothed_lane_width_m
+
+    def _smooth_lane_center_offset(self, raw: float | None) -> float | None:
+        if raw is None:
+            return None
+        if not self.lane_smoothing_enabled:
+            self.smoothed_lane_center_offset_m = raw
+            return raw
+        if self.smoothed_lane_center_offset_m is None:
+            self.smoothed_lane_center_offset_m = raw
+        else:
+            self.smoothed_lane_center_offset_m = (
+                self.smoothed_lane_center_offset_m * (1.0 - LANE_SMOOTH_ALPHA) + raw * LANE_SMOOTH_ALPHA
+            )
+        return self.smoothed_lane_center_offset_m
+
     def _update_lateral_plan(self, lateral_plan: Any) -> None:
         lane_width = safe_optional_float(lateral_plan, "laneWidth")
         if lane_width is not None and lane_width > 0.0:
-            self.lane_width_m = clamp(lane_width, 2.4, 4.6)
+            self._set_lane_width(clamp(lane_width, 2.4, 4.6))
 
         if not self.model_lane_change_seen:
             self.lane_change_state = enum_text(safe_get(lateral_plan, "laneChangeState", "off"))

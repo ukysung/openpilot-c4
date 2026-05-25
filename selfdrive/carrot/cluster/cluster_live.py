@@ -43,7 +43,7 @@ LIVE_CAN_SERVICES = ("can",)
 
 
 class OpenpilotLiveSource:
-    def __init__(self, include_can: bool = True, timeout_ms: int = 0) -> None:
+    def __init__(self, include_can: bool = True, timeout_ms: int = 0, lane_smoothing_enabled: bool = False) -> None:
         try:
             import cereal.messaging as messaging
         except Exception as exc:
@@ -53,9 +53,10 @@ class OpenpilotLiveSource:
             ) from exc
 
         self.messaging: Any = messaging
+        self.lane_smoothing_enabled = bool(lane_smoothing_enabled)
         self.services = list(LIVE_SERVICES_BASE + (LIVE_CAN_SERVICES if include_can else ()))
         self.sm = messaging.SubMaster(self.services)
-        self.parser = RouteLogParser()
+        self.parser = RouteLogParser(lane_smoothing_enabled=self.lane_smoothing_enabled)
         self.timeout_ms = max(0, int(timeout_ms))
         self.last_state: ClusterUiState | None = None
         self.start_t = time.monotonic()
@@ -74,12 +75,18 @@ class OpenpilotLiveSource:
         if self._service_alive("carState"):
             event_t = self._service_time("carState")
             frame = self.parser._frame_from_car_state(self.sm["carState"], event_t)
-            self.last_state = frame_to_state(frame)
+            self.last_state = self._tag_smoothing(frame_to_state(frame))
             self.frames += 1
             return self.last_state
 
-        self.last_state = standby_state()
+        self.last_state = self._tag_smoothing(standby_state())
         return self.last_state
+
+    def _tag_smoothing(self, state: ClusterUiState) -> ClusterUiState:
+        if state.lane_smoothing_enabled == self.lane_smoothing_enabled:
+            return state
+        from dataclasses import replace
+        return replace(state, lane_smoothing_enabled=self.lane_smoothing_enabled)
 
     def status_text(self) -> str:
         alive = sum(1 for service in self.services if self._service_alive(service))

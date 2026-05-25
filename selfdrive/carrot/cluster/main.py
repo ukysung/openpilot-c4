@@ -82,7 +82,9 @@ def run_demo(
     render_msaa: bool,
     gc_freeze_init: bool,
     theme_mode: str | None,
+    lane_smoothing: str,
 ) -> None:
+    lane_smoothing_enabled = (lane_smoothing == "smooth")
     profile = ProfileReporter(profile_render, profile_interval_s)
     gc_hook = GcProfileHook(profile) if profile_render else None
     if gc_hook is not None:
@@ -128,11 +130,21 @@ def run_demo(
     simulator = ClusterSimulator() if input_mode in ("random", "gamepad") else None
     controller = DualSenseSimulator(controller_index) if input_mode == "gamepad" else None
     random_input = RandomInputSource() if input_mode == "random" else None
-    live_source = OpenpilotLiveSource(include_can=live_include_can, timeout_ms=live_timeout_ms) if input_mode == "live" else None
+    live_source = OpenpilotLiveSource(
+        include_can=live_include_can,
+        timeout_ms=live_timeout_ms,
+        lane_smoothing_enabled=lane_smoothing_enabled,
+    ) if input_mode == "live" else None
     route_source = None
     if input_mode == "route":
         profile_stage = time.perf_counter()
-        route_source = RouteReplaySource.load(route_path, route_log, route_start_segment, route_max_segments)
+        route_source = RouteReplaySource.load(
+            route_path,
+            route_log,
+            route_start_segment,
+            route_max_segments,
+            lane_smoothing_enabled=lane_smoothing_enabled,
+        )
         profile.add_elapsed("source.route_load_initial", profile_stage)
     if route_source is not None:
         print(
@@ -484,6 +496,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable post-init gc.freeze(). Default enabled to avoid long gen2 pauses during USB rendering.",
     )
+    parser.add_argument(
+        "--lane-smoothing",
+        choices=("legacy", "smooth"),
+        default="smooth",
+        help=(
+            "Lane/path data handling. smooth=ema-filtered modelV2 lanes + drop steering-fallback "
+            "curves + catmull-rom interpolation (default). legacy=raw modelV2 + synthetic curve "
+            "fallback (old behavior). Tune EMA via CLUSTER_LANE_ALPHA env var (default 0.25)."
+        ),
+    )
     args = parser.parse_args()
     if args.fps < 0:
         parser.error("--fps must be 0 or greater")
@@ -559,6 +581,7 @@ def main() -> None:
             args.render_msaa,
             not args.no_gc_freeze,
             args.theme,
+            args.lane_smoothing,
         )
     except KeyboardInterrupt:
         print("\nStopped.")

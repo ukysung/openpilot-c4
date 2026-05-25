@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import math
 import os
 import time
@@ -49,7 +51,7 @@ TURN_SIGNAL_CENTER_Y = 72
 TURN_SIGNAL_MID_CENTER_X = (TURN_SIGNAL_LEFT_CENTER_X + TURN_SIGNAL_RIGHT_CENTER_X) * 0.5
 SPEED_VALUE_CENTER_X = 260
 SPEED_VALUE_CENTER_Y = 230
-SPEED_LIMIT_SIGN_CENTER_X = 760
+SPEED_LIMIT_SIGN_CENTER_X = 460
 SPEED_LIMIT_SIGN_CENTER_Y = TURN_SIGNAL_CENTER_Y
 CRUISE_SET_CENTER_X = SPEED_VALUE_CENTER_X
 CRUISE_SET_CENTER_Y = TURN_SIGNAL_CENTER_Y
@@ -295,6 +297,8 @@ class ClusterUiRenderer:
         self._route_video_frame_id: str | None = None
         self._left_turn_signal_started_at: float | None = None
         self._right_turn_signal_started_at: float | None = None
+        self._triangle_strip_points = None
+        self._triangle_strip_capacity = 0
         self.profile_enabled = os.environ.get("CLUSTER_PROFILE_RENDER") == "1"
         self._profile_samples: list[tuple[str, float]] = []
 
@@ -484,21 +488,37 @@ class ClusterUiRenderer:
         state: ClusterUiState,
         portrait_upload: bool = False,
     ) -> tuple[bytes, int, int]:
+        with self.render_to_rgba_buffer(state, portrait_upload=portrait_upload) as (
+            rgba_buffer,
+            image_width,
+            image_height,
+        ):
+            profile_stage = self._profile_start()
+            rgba = bytes(rgba_buffer)
+            self._profile_add("render_to_rgba.copy_bytes", profile_stage)
+            return rgba, image_width, image_height
+
+    @contextmanager
+    def render_to_rgba_buffer(
+        self,
+        state: ClusterUiState,
+        portrait_upload: bool = False,
+    ) -> Iterator[tuple[object, int, int]]:
         profile_stage = self._profile_start()
         image = self._render_to_image(state, portrait_upload=portrait_upload)
         self._profile_add("render_to_rgba.render_to_image", profile_stage)
 
         try:
-            profile_stage = self._profile_start()
-            rl.image_format(image, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
-            self._profile_add("render_to_rgba.image_format", profile_stage)
+            if image.format != rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8:
+                profile_stage = self._profile_start()
+                rl.image_format(image, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+                self._profile_add("render_to_rgba.image_format", profile_stage)
 
             byte_count = image.width * image.height * 4
             profile_stage = self._profile_start()
-            rgba = bytes(rl.ffi.buffer(image.data, byte_count))
-            self._profile_add("render_to_rgba.copy_bytes", profile_stage)
-
-            return rgba, image.width, image.height
+            rgba_buffer = rl.ffi.buffer(image.data, byte_count)
+            self._profile_add("render_to_rgba.buffer_view", profile_stage)
+            yield rgba_buffer, image.width, image.height
         finally:
             profile_stage = self._profile_start()
             rl.unload_image(image)
@@ -810,41 +830,47 @@ class ClusterUiRenderer:
         profile_stage = self._profile_start()
         rl.begin_mode_3d(camera)
         self._profile_add("draw_scene.begin_mode_3d", profile_stage)
-        profile_stage = self._profile_start()
-        for strip in scene.highlight_lanes:
-            self._draw_strip(strip)
-        self._profile_add("draw_scene.highlight_lanes", profile_stage)
-        profile_stage = self._profile_start()
-        for strip in scene.road_edges:
-            self._draw_strip(strip)
-        self._profile_add("draw_scene.road_edges", profile_stage)
-        profile_stage = self._profile_start()
-        for strip in scene.lane_markings:
-            self._draw_strip(strip)
-        self._profile_add("draw_scene.lane_markings", profile_stage)
-        profile_stage = self._profile_start()
-        for strip in scene.planned_path:
-            self._draw_strip(strip)
-        self._profile_add("draw_scene.planned_path", profile_stage)
-        profile_stage = self._profile_start()
-        for point in scene.radar_points:
-            self._draw_radar_point(point)
-        self._profile_add("draw_scene.radar_points", profile_stage)
-        profile_stage = self._profile_start()
-        for vehicle in scene.vehicles:
-            self._draw_vehicle(vehicle)
-        self._profile_add("draw_scene.vehicles", profile_stage)
+        rl.rl_push_matrix()
+        if abs(scene.scene_shift_x_m) > 0.0001:
+            rl.rl_translatef(scene.scene_shift_x_m, 0.0, 0.0)
+        try:
+            profile_stage = self._profile_start()
+            for strip in scene.highlight_lanes:
+                self._draw_strip(strip)
+            self._profile_add("draw_scene.highlight_lanes", profile_stage)
+            profile_stage = self._profile_start()
+            for strip in scene.road_edges:
+                self._draw_strip(strip)
+            self._profile_add("draw_scene.road_edges", profile_stage)
+            profile_stage = self._profile_start()
+            for strip in scene.lane_markings:
+                self._draw_strip(strip)
+            self._profile_add("draw_scene.lane_markings", profile_stage)
+            profile_stage = self._profile_start()
+            for strip in scene.planned_path:
+                self._draw_strip(strip)
+            self._profile_add("draw_scene.planned_path", profile_stage)
+            profile_stage = self._profile_start()
+            for point in scene.radar_points:
+                self._draw_radar_point(point)
+            self._profile_add("draw_scene.radar_points", profile_stage)
+            profile_stage = self._profile_start()
+            for vehicle in scene.vehicles:
+                self._draw_vehicle(vehicle)
+            self._profile_add("draw_scene.vehicles", profile_stage)
+        finally:
+            rl.rl_pop_matrix()
         profile_stage = self._profile_start()
         rl.end_mode_3d()
         self._profile_add("draw_scene.end_mode_3d", profile_stage)
         profile_stage = self._profile_start()
-        self._draw_radar_point_labels(scene.radar_points, camera)
+        self._draw_radar_point_labels(scene.radar_points, camera, scene.scene_shift_x_m)
         self._profile_add("draw_scene.radar_labels", profile_stage)
         profile_stage = self._profile_start()
-        self._draw_vehicle_badges(scene.vehicles, camera)
+        self._draw_vehicle_badges(scene.vehicles, camera, scene.scene_shift_x_m)
         self._profile_add("draw_scene.vehicle_badges", profile_stage)
         profile_stage = self._profile_start()
-        self._draw_rear_vehicle_indicators(scene.rear_indicators, camera)
+        self._draw_rear_vehicle_indicators(scene.rear_indicators, camera, scene.scene_shift_x_m)
         self._profile_add("draw_scene.rear_indicators", profile_stage)
 
     def _draw_strip(self, strip: MeshStrip) -> None:
@@ -853,19 +879,24 @@ class ClusterUiRenderer:
             return
 
         color = rl_color(strip.color)
+        x_offset_m = strip.x_offset_m
 
         if hasattr(rl, "draw_triangle_strip_3d"):
-            points = rl.ffi.new("struct Vector3[]", count * 2)
+            point_count = count * 2
+            if self._triangle_strip_capacity < point_count:
+                self._triangle_strip_points = rl.ffi.new("struct Vector3[]", point_count)
+                self._triangle_strip_capacity = point_count
+            points = self._triangle_strip_points
 
             for index in range(count):
                 left = strip.left[index]
                 right = strip.right[index]
 
-                points[index * 2].x = left.x
+                points[index * 2].x = left.x + x_offset_m
                 points[index * 2].y = left.y
                 points[index * 2].z = left.z
 
-                points[index * 2 + 1].x = right.x
+                points[index * 2 + 1].x = right.x + x_offset_m
                 points[index * 2 + 1].y = right.y
                 points[index * 2 + 1].z = right.z
 
@@ -877,10 +908,14 @@ class ClusterUiRenderer:
             return
 
         for index in range(count - 1):
-            left_near = vec3(strip.left[index])
-            right_near = vec3(strip.right[index])
-            left_far = vec3(strip.left[index + 1])
-            right_far = vec3(strip.right[index + 1])
+            left = strip.left[index]
+            right = strip.right[index]
+            next_left = strip.left[index + 1]
+            next_right = strip.right[index + 1]
+            left_near = rl.Vector3(left.x + x_offset_m, left.y, left.z)
+            right_near = rl.Vector3(right.x + x_offset_m, right.y, right.z)
+            left_far = rl.Vector3(next_left.x + x_offset_m, next_left.y, next_left.z)
+            right_far = rl.Vector3(next_right.x + x_offset_m, next_right.y, next_right.z)
             rl.draw_triangle_3d(left_near, right_near, right_far, color)
             rl.draw_triangle_3d(left_near, right_far, left_far, color)
 
@@ -915,13 +950,18 @@ class ClusterUiRenderer:
         marker_size = rl.Vector3(side_m, side_m, height_m)
         rl.draw_cube_v(marker_center, marker_size, rl_color(point.color))
 
-    def _draw_radar_point_labels(self, points: tuple[RadarPointMarker, ...], camera) -> None:
+    def _draw_radar_point_labels(
+        self,
+        points: tuple[RadarPointMarker, ...],
+        camera,
+        scene_shift_x_m: float = 0.0,
+    ) -> None:
         theme = self._current_theme()
         occupied: list[tuple[float, float, float, float]] = []
         label_bounds = self._world_label_bounds(left=430, top=52, right=40, bottom=26)
         ordered = sorted(points, key=lambda point: (point.longitudinal_m, abs(point.lateral_m), point.label))
-        for point in ordered[:32]:
-            anchor = rl.Vector3(point.center.x, point.center.y, point.center.z + 0.46)
+        for point in ordered:
+            anchor = rl.Vector3(point.center.x + scene_shift_x_m, point.center.y, point.center.z + 0.46)
             screen = world_to_screen_label_anchor(anchor, camera, self.width, self.height)
             if screen is None:
                 continue
@@ -991,7 +1031,12 @@ class ClusterUiRenderer:
         finally:
             rl.rl_enable_backface_culling()
 
-    def _draw_vehicle_badges(self, vehicles: tuple[VehicleBox, ...], camera) -> None:
+    def _draw_vehicle_badges(
+        self,
+        vehicles: tuple[VehicleBox, ...],
+        camera,
+        scene_shift_x_m: float = 0.0,
+    ) -> None:
         theme = self._current_theme()
         occupied: list[tuple[float, float, float, float]] = []
         ordered = sorted(
@@ -1002,8 +1047,12 @@ class ClusterUiRenderer:
                 -vehicle.confidence,
             ),
         )
-        for vehicle in ordered[:18]:
-            anchor = rl.Vector3(vehicle.center.x, vehicle.center.y, vehicle.height_m + 0.55)
+        for vehicle in ordered:
+            anchor = rl.Vector3(
+                vehicle.center.x + scene_shift_x_m,
+                vehicle.center.y,
+                vehicle.height_m + 0.55,
+            )
             screen = world_to_screen_label_anchor(anchor, camera, self.width, self.height)
             if screen is None:
                 continue
@@ -1056,15 +1105,25 @@ class ClusterUiRenderer:
         self,
         indicators: tuple[RearVehicleIndicator, ...],
         camera,
+        scene_shift_x_m: float = 0.0,
     ) -> None:
         for indicator in indicators:
-            if self._rear_indicator_vehicle_visible(indicator, camera):
+            if self._rear_indicator_vehicle_visible(indicator, camera, scene_shift_x_m):
                 continue
-            x, y = self._rear_indicator_screen_position(indicator, camera)
+            x, y = self._rear_indicator_screen_position(indicator, camera, scene_shift_x_m)
             self._draw_rear_distance_arrow(indicator, x, y)
 
-    def _rear_indicator_vehicle_visible(self, indicator: RearVehicleIndicator, camera) -> bool:
-        anchor = rl.Vector3(indicator.center.x, indicator.center.y, indicator.center.z + 0.62)
+    def _rear_indicator_vehicle_visible(
+        self,
+        indicator: RearVehicleIndicator,
+        camera,
+        scene_shift_x_m: float = 0.0,
+    ) -> bool:
+        anchor = rl.Vector3(
+            indicator.center.x + scene_shift_x_m,
+            indicator.center.y,
+            indicator.center.z + 0.62,
+        )
         screen = world_to_screen_label_anchor(anchor, camera, self.width, self.height)
         if screen is None:
             return False
@@ -1079,10 +1138,11 @@ class ClusterUiRenderer:
         self,
         indicator: RearVehicleIndicator,
         camera,
+        scene_shift_x_m: float = 0.0,
     ) -> tuple[float, float]:
         scale_x = self.width / DESIGN_WIDTH
         scale_y = self.height / DESIGN_HEIGHT
-        proxy = rl.Vector3(indicator.anchor.x, indicator.anchor.y, indicator.anchor.z)
+        proxy = rl.Vector3(indicator.anchor.x + scene_shift_x_m, indicator.anchor.y, indicator.anchor.z)
         screen = world_to_screen_label_anchor(proxy, camera, self.width, self.height)
         fallback_x = (735.0 if indicator.lane_side == "left" else 1185.0) * scale_x
         fallback_y = 382.0 * scale_y

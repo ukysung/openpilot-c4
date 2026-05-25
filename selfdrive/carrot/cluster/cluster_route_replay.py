@@ -62,7 +62,7 @@ LANE_CHANGE_MODEL_DIRECT_ONLY = True
 MODEL_DIRECT_LANE_SETTLE_MIN_PROGRESS = 0.65
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RouteReplayFrame:
     t: float
     speed_kph: float
@@ -164,7 +164,7 @@ class RouteReplayFrame:
     lateral_plan_curvature_rates: tuple[float, ...] = ()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RouteVideoSegment:
     index: int | None
     path: Path
@@ -172,7 +172,7 @@ class RouteVideoSegment:
     end_t: float
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RouteVideoFrame:
     rgba: bytes
     width: int
@@ -180,7 +180,7 @@ class RouteVideoFrame:
     frame_id: str
 
 
-@dataclass
+@dataclass(slots=True)
 class RouteReplayChunk:
     index: int
     path: Path
@@ -189,14 +189,14 @@ class RouteReplayChunk:
     end_t: float
 
 
-@dataclass
+@dataclass(slots=True)
 class RouteReplayParsedFile:
     index: int
     path: Path
     frames: list[RouteReplayFrame]
 
 
-@dataclass
+@dataclass(slots=True)
 class RouteReplayWorkerResult:
     generation: int
     index: int
@@ -1148,10 +1148,9 @@ class RouteLogParser:
         debug_text = safe_get(lateral_plan, "latDebugText")
         if debug_text:
             self.lateral_plan_debug_text = str(debug_text)[:64]
-        self.lateral_plan_curvatures = numeric_tuple(safe_get(lateral_plan, "curvatures"), limit=10, minimum=-0.08, maximum=0.08)
+        self.lateral_plan_curvatures = numeric_tuple(safe_get(lateral_plan, "curvatures"), minimum=-0.08, maximum=0.08)
         self.lateral_plan_curvature_rates = numeric_tuple(
             safe_get(lateral_plan, "curvatureRates"),
-            limit=10,
             minimum=-0.08,
             maximum=0.08,
         )
@@ -1165,17 +1164,15 @@ class RouteLogParser:
             safe_get(longitudinal_plan, "longitudinalPlanSource", self.longitudinal_plan_source or "")
         ) or self.longitudinal_plan_source
         self.longitudinal_plan_speeds_kph = tuple(
-            value * 3.6 for value in numeric_tuple(safe_get(longitudinal_plan, "speeds"), limit=12, minimum=0.0, maximum=90.0)
+            value * 3.6 for value in numeric_tuple(safe_get(longitudinal_plan, "speeds"), minimum=0.0, maximum=90.0)
         )
         self.longitudinal_plan_accels_mps2 = numeric_tuple(
             safe_get(longitudinal_plan, "accels"),
-            limit=12,
             minimum=-MAX_ACCEL_MPS2,
             maximum=MAX_ACCEL_MPS2,
         )
         self.longitudinal_plan_jerks_mps3 = numeric_tuple(
             safe_get(longitudinal_plan, "jerks"),
-            limit=12,
             minimum=-12.0,
             maximum=12.0,
         )
@@ -1812,15 +1809,17 @@ def frame_to_state(frame: RouteReplayFrame) -> ClusterUiState:
         frame.right_road_edge_offset,
         lane_grid_offset if use_animated_lane_grid else 0.0,
     )
-    left_road_edge_points = transformed_model_line_points(
-        model_line_at(frame.model_road_edges, 0),
+    left_road_edge_points = model_line_at(frame.model_road_edges, 0)
+    left_road_edge_lateral_shift_m = model_line_lateral_shift(
+        left_road_edge_points,
         frame,
         left_road_edge_offset,
         lane_grid_offset,
         use_animated_lane_grid,
     )
-    right_road_edge_points = transformed_model_line_points(
-        model_line_at(frame.model_road_edges, 1),
+    right_road_edge_points = model_line_at(frame.model_road_edges, 1)
+    right_road_edge_lateral_shift_m = model_line_lateral_shift(
+        right_road_edge_points,
         frame,
         right_road_edge_offset,
         lane_grid_offset,
@@ -1858,6 +1857,8 @@ def frame_to_state(frame: RouteReplayFrame) -> ClusterUiState:
         right_road_edge_offset=right_road_edge_offset,
         left_road_edge_points=left_road_edge_points,
         right_road_edge_points=right_road_edge_points,
+        left_road_edge_lateral_shift_m=left_road_edge_lateral_shift_m,
+        right_road_edge_lateral_shift_m=right_road_edge_lateral_shift_m,
         throttle=frame.throttle,
         brake=frame.brake,
         model_path=frame.model_path,
@@ -2130,6 +2131,7 @@ def lanes_for_frame(
     markings: list[LaneMarking] = []
     if use_animated_lane_grid and frame.lane_change == "left":
         left_outer = left_inner - 1.0
+        left_outer_points = model_line_at(frame.model_lane_lines, 0)
         markings.append(
             LaneMarking(
                 left_outer,
@@ -2137,8 +2139,9 @@ def lanes_for_frame(
                 "solid",
                 visible=True,
                 width=5,
-                model_points=transformed_model_line_points(
-                    model_line_at(frame.model_lane_lines, 0),
+                model_points=left_outer_points,
+                model_lateral_shift_m=model_line_lateral_shift(
+                    left_outer_points,
                     frame,
                     left_outer,
                     lane_grid_offset,
@@ -2146,6 +2149,7 @@ def lanes_for_frame(
                 ),
             )
         )
+    left_inner_points = model_line_at(frame.model_lane_lines, 1)
     markings.append(
         LaneMarking(
             left_inner,
@@ -2153,8 +2157,9 @@ def lanes_for_frame(
             frame.left_lane_style,
             visible=left_inner_visible,
             width=7,
-            model_points=transformed_model_line_points(
-                model_line_at(frame.model_lane_lines, 1),
+            model_points=left_inner_points,
+            model_lateral_shift_m=model_line_lateral_shift(
+                left_inner_points,
                 frame,
                 left_inner,
                 lane_grid_offset,
@@ -2162,6 +2167,7 @@ def lanes_for_frame(
             ),
         )
     )
+    right_inner_points = model_line_at(frame.model_lane_lines, 2)
     markings.append(
         LaneMarking(
             right_inner,
@@ -2169,8 +2175,9 @@ def lanes_for_frame(
             frame.right_lane_style,
             visible=right_inner_visible,
             width=7,
-            model_points=transformed_model_line_points(
-                model_line_at(frame.model_lane_lines, 2),
+            model_points=right_inner_points,
+            model_lateral_shift_m=model_line_lateral_shift(
+                right_inner_points,
                 frame,
                 right_inner,
                 lane_grid_offset,
@@ -2180,6 +2187,7 @@ def lanes_for_frame(
     )
     if use_animated_lane_grid and frame.lane_change == "right":
         right_outer = right_inner + 1.0
+        right_outer_points = model_line_at(frame.model_lane_lines, 3)
         markings.append(
             LaneMarking(
                 right_outer,
@@ -2187,8 +2195,9 @@ def lanes_for_frame(
                 "dashed",
                 visible=True,
                 width=5,
-                model_points=transformed_model_line_points(
-                    model_line_at(frame.model_lane_lines, 3),
+                model_points=right_outer_points,
+                model_lateral_shift_m=model_line_lateral_shift(
+                    right_outer_points,
                     frame,
                     right_outer,
                     lane_grid_offset,
@@ -2208,46 +2217,24 @@ def model_line_at(
     return lines[index]
 
 
-def transformed_model_line_points(
+def model_line_lateral_shift(
     points: tuple[ModelPathPoint, ...],
     frame: RouteReplayFrame,
     baseline_offset: float | None,
     lane_grid_offset: float,
     use_animated_lane_grid: bool,
-) -> tuple[ModelPathPoint, ...]:
+) -> float:
     if not points:
-        return ()
+        return 0.0
     lane_width_m = max(0.1, frame.lane_width_m)
     if use_animated_lane_grid and baseline_offset is not None:
         origin_lateral_m = points[0].lateral_m
         base_lateral_m = baseline_offset * lane_width_m
-        return tuple(
-            ModelPathPoint(
-                forward_m=point.forward_m,
-                lateral_m=base_lateral_m + point.lateral_m - origin_lateral_m,
-                lateral_std_m=point.lateral_std_m,
-                speed_mps=point.speed_mps,
-                accel_mps2=point.accel_mps2,
-                orientation_rad=point.orientation_rad,
-                orientation_rate_rps=point.orientation_rate_rps,
-            )
-            for point in points
-        )
+        return base_lateral_m - origin_lateral_m
 
     center_m = frame.lane_center_offset_m or 0.0
     shift_m = lane_grid_offset * lane_width_m
-    return tuple(
-        ModelPathPoint(
-            forward_m=point.forward_m,
-            lateral_m=point.lateral_m - center_m + shift_m,
-            lateral_std_m=point.lateral_std_m,
-            speed_mps=point.speed_mps,
-            accel_mps2=point.accel_mps2,
-            orientation_rad=point.orientation_rad,
-            orientation_rate_rps=point.orientation_rate_rps,
-        )
-        for point in points
-    )
+    return -center_m + shift_m
 
 
 def model_line_points(line: Any) -> tuple[ModelPathPoint, ...]:
@@ -2256,7 +2243,7 @@ def model_line_points(line: Any) -> tuple[ModelPathPoint, ...]:
     if xs is None or ys is None:
         return ()
 
-    count = min(len(xs), len(ys), 96)
+    count = min(len(xs), len(ys))
     points: list[ModelPathPoint] = []
     previous_forward_m = -1.0
     for index in range(count):
@@ -2293,7 +2280,7 @@ def model_path_points_from_model_v2(model: Any) -> tuple[ModelPathPoint, ...]:
     orientations = safe_get(orientation, "z") if orientation is not None else None
     orientation_rates = safe_get(orientation_rate, "z") if orientation_rate is not None else None
 
-    count = min(len(xs), len(ys), 96)
+    count = min(len(xs), len(ys))
     points: list[ModelPathPoint] = []
     previous_forward_m = -1.0
     for index in range(count):
@@ -2330,8 +2317,7 @@ def model_lead_detections_from_model_v2(model: Any) -> tuple[DetectedVehicle, ..
     model_velocity = safe_get(model, "velocity")
     model_speed_mps = first_list_value(safe_get(model_velocity, "x")) if model_velocity is not None else None
     detections: list[DetectedVehicle] = []
-    for index in range(min(len(leads), 3)):
-        lead = leads[index]
+    for index, lead in enumerate(leads):
         probability = clamp(safe_float(lead, "prob", 0.0), 0.0, 1.0)
         if probability < MODEL_LEAD_MIN_PROB:
             continue
@@ -2388,7 +2374,7 @@ def model_lead_is_cut_in(lead: Any) -> bool:
     y0 = finite_float(ys[0])
     if y0 is None or abs(y0) < 0.85:
         return False
-    for index in range(1, min(len(ys), len(xs), 6)):
+    for index in range(1, min(len(ys), len(xs))):
         future_y = finite_float(ys[index])
         future_x = finite_float(xs[index])
         if future_y is None or future_x is None or future_x - RADAR_TO_CAMERA_M > 75.0:
@@ -2645,7 +2631,7 @@ def sorted_radar_points(points: Any) -> tuple[RadarPoint, ...]:
         and RADAR_MIN_LONGITUDINAL_M <= point.longitudinal_m <= RADAR_FRONT_MAX_LONGITUDINAL_M
     ]
     filtered.sort(key=lambda point: (point.longitudinal_m, abs(point.lateral_m), point.label))
-    return tuple(filtered[:48])
+    return tuple(filtered)
 
 
 def normalized_lateral_m(value: float) -> float:
@@ -2980,7 +2966,7 @@ def enum_text(value: Any) -> str:
 
 def numeric_tuple(
     values: Any,
-    limit: int,
+    limit: int | None = None,
     minimum: float | None = None,
     maximum: float | None = None,
 ) -> tuple[float, ...]:
@@ -2988,7 +2974,7 @@ def numeric_tuple(
         return ()
     parsed: list[float] = []
     for index, value in enumerate(values):
-        if index >= limit:
+        if limit is not None and index >= limit:
             break
         number = finite_float(value)
         if number is None:

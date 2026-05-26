@@ -3,13 +3,13 @@
 
   const DEFAULT_KMAP_URL = "https://jominki354.github.io/kmap/";
   // FRAME_VERSION QUOTA POLICY (Kakao counts 1 quota per SDK script load):
-  //   - Every bump invalidates the iframe URL for every user → forces a
-  //     full SDK reload on the next session → +1 quota per user.
+  //   - Every bump invalidates the iframe URL for every user, forcing a
+  //     full SDK reload on the next session and +1 quota per user.
   //   - Only bump when the iframe contents (kmap/index.html, kmap.css,
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-17";
+  const FRAME_VERSION = "2605-19";
   const SEND_INTERVAL_MS = 500;
   const IFRAME_TIMEOUT_MS = 15000;
   const LOCATION_MAX_AGE_MS = 5000;
@@ -103,7 +103,7 @@
   function isDevHost() {
     // Only true-loopback hostnames are auto-dev. Comma devices serve from
     // private LAN IPs (192.168.x.x, 10.x.x.x, etc.) in *production*, so
-    // those must NOT be auto-classified as dev — that was causing every
+    // those must NOT be auto-classified as dev; that was causing every
     // user to be silently forced into mock mode.
     const host = (window.location.hostname || "").toLowerCase();
     if (DEV_HOSTNAMES.has(host)) return true;
@@ -318,7 +318,7 @@
         if (this.visionActiveSinceMs === 0) this.visionActiveSinceMs = now;
         const elapsed = now - this.visionActiveSinceMs;
         if (elapsed < VISION_WARMUP_MS) {
-          // Do NOT call this.show() here — the iframe hasn't loaded yet,
+          // Do NOT call this.show() here; the iframe hasn't loaded yet,
           // so showing the dock now flashes an empty white box. The dock
           // will be revealed by handleMessage("ready") once the iframe
           // actually has content to display.
@@ -366,7 +366,7 @@
       writeLastLoad({ url: this.frameUrl, at: Date.now() });
       if (next >= DAILY_HARD_CAP) {
         this.circuitTrippedToday = true;
-        try { console.warn(`[CarrotMap] daily SDK load cap (${DAILY_HARD_CAP}) reached — forcing mock for the rest of today`); } catch {}
+        try { console.warn(`[CarrotMap] daily SDK load cap (${DAILY_HARD_CAP}) reached; forcing mock for the rest of today`); } catch {}
       } else if (next === DAILY_WARN_THRESHOLD) {
         try { console.warn(`[CarrotMap] SDK loaded ${next}x today (warn threshold)`); } catch {}
       }
@@ -438,7 +438,7 @@
         if (Number(data.sdkLoadedAt) > 0 && data.provider === "kakao") {
           this.recordSdkLoad();
         }
-        // Now safe to reveal the dock — iframe has actual content.
+        // Now safe to reveal the dock; iframe has actual content.
         if (this.shouldRun()) this.show();
         this.tick();
       } else if (data.type === "error") {
@@ -495,14 +495,29 @@
       };
     }
 
+    buildNavClearPayload(reason) {
+      return {
+        source: "carrot-vision",
+        type: "nav",
+        active: false,
+        path: "",
+        turn: null,
+        goal: null,
+        sdi: null,
+        road: "",
+        clearReason: reason || "none",
+        ts: Date.now(),
+      };
+    }
+
     buildNavPayload() {
       const runtimeState = window.CarrotLiveRuntimeState;
-      if (!runtimeState?.ok) return null;
+      if (!runtimeState?.ok) return this.buildNavClearPayload("runtime");
 
       const services = runtimeState.services || {};
       const carrotMan = services.carrotMan || {};
       const fetchedAtMs = finiteNumber(runtimeState.fetchedAtMs) || Date.now();
-      if (Date.now() - fetchedAtMs > LOCATION_MAX_AGE_MS) return null;
+      if (Date.now() - fetchedAtMs > LOCATION_MAX_AGE_MS) return this.buildNavClearPayload("stale");
 
       const path = String(carrotMan.naviPaths || "").trim();
       const activeCarrot = finiteNumber(carrotMan.activeCarrot) ?? 0;
@@ -536,6 +551,7 @@
           text: String(carrotMan.szSdiDescr || ""),
         },
         road: String(carrotMan.szPosRoadName || ""),
+        clearReason: "",
         ts: fetchedAtMs,
       };
     }
@@ -555,6 +571,7 @@
         payload.sdi?.dist ?? "",
         payload.sdi?.text ?? "",
         payload.road ?? "",
+        payload.clearReason ?? "",
       ].join("|");
       if (sig === this.lastNavPayloadSig) return;
       this.lastNavPayloadSig = sig;

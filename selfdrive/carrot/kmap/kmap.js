@@ -47,6 +47,7 @@
     status: "idle",
     error: "",
     sdkLoadedAt: 0,
+    lastDebugPostAt: 0,
   };
 
   const navState = {
@@ -367,6 +368,109 @@
       // Projection can be temporarily unavailable while Kakao is relayouting.
     }
     return null;
+  }
+
+  function summarizePathPoint(point) {
+    if (!point) return null;
+    let latlng = null;
+    let projected = null;
+    if (shouldUseMapProjection()) {
+      try {
+        latlng = localPointToLatLng(point);
+        projected = latlng ? state.map.getProjection()?.containerPointFromCoords?.(latlng) : null;
+      } catch (_) {
+        latlng = null;
+        projected = null;
+      }
+    }
+    return {
+      forward: finiteNumber(point.forward),
+      lateral: finiteNumber(point.lateral),
+      d: finiteNumber(point.d),
+      lat: latlng?.getLat?.() ?? null,
+      lon: latlng?.getLng?.() ?? null,
+      canvasX: Number.isFinite(projected?.x) ? projected.x : null,
+      canvasY: Number.isFinite(projected?.y) ? projected.y : null,
+    };
+  }
+
+  function buildDebugSnapshot(reason = "") {
+    const rect = overlayCanvas?.getBoundingClientRect?.();
+    const center = state.map?.getCenter?.();
+    const points = navState.points || [];
+    const sampleIndexes = points.length
+      ? Array.from(new Set([0, Math.floor(points.length / 2), points.length - 1]))
+      : [];
+    return {
+      reason,
+      ts: Date.now(),
+      provider: state.provider,
+      status: state.status,
+      error: state.error,
+      map: {
+        projection: shouldUseMapProjection(),
+        level: state.map?.getLevel?.() ?? null,
+        centerLat: center?.getLat?.() ?? null,
+        centerLon: center?.getLng?.() ?? null,
+      },
+      vehicle: {
+        lat: state.lat,
+        lon: state.lon,
+        heading: state.heading,
+        speed: state.speed,
+        displayLat: interp.display.lat,
+        displayLon: interp.display.lon,
+        displayHeading: interp.display.heading,
+      },
+      canvas: {
+        cssWidth: rect?.width ?? 0,
+        cssHeight: rect?.height ?? 0,
+        width: overlayCanvas?.width || 0,
+        height: overlayCanvas?.height || 0,
+        dpr: Math.min(window.devicePixelRatio || 1, 2),
+      },
+      nav: {
+        active: navState.active,
+        points: points.length,
+        pathLength: navState.path.length,
+        updatedAgeMs: navState.updatedAt ? Date.now() - navState.updatedAt : null,
+        road: navState.road,
+        turn: navState.turn,
+        goal: navState.goal,
+        sdi: navState.sdi,
+        projectionSig: navState.lastProjectionSig,
+        samples: sampleIndexes.map((index) => ({ index, ...summarizePathPoint(points[index]) })),
+      },
+      route: {
+        active: routeState.active,
+        expanded: routeState.expanded,
+        coordinates: routeState.coordinates.length,
+      },
+      options: {
+        headingUp: state.overlayHeadingUp,
+        showGrid: state.showGrid,
+        showCompass: state.showCompass,
+        curvatureColor: state.curvatureColor,
+      },
+    };
+  }
+
+  function postDebugSnapshot(reason = "", force = false) {
+    if (!state.debug && !force) return;
+    const now = Date.now();
+    if (!force && now - state.lastDebugPostAt < 1000) return;
+    state.lastDebugPostAt = now;
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          source: "carrot-kmap",
+          type: "debug-snapshot",
+          snapshot: buildDebugSnapshot(reason),
+        }, "*");
+      }
+    } catch (_) {
+      // Standalone file preview can ignore parent messaging failures.
+    }
   }
 
   function pathPointToCanvas(point, cx, cy, pxPerMeter) {
@@ -821,6 +925,7 @@
     updateMockPan(interp.display.lat, interp.display.lon);
     applyKakaoPosition(interp.display.lat, interp.display.lon);
     renderOverlay();
+    postDebugSnapshot("render");
   }
 
   function ensureRenderLoop() {
@@ -1003,6 +1108,8 @@
       setRoute(data);
     } else if (data.type === "expanded") {
       setExpanded(data.expanded);
+    } else if (data.type === "debug-request") {
+      postDebugSnapshot("request", true);
     }
   }
 

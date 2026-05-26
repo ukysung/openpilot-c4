@@ -9,7 +9,7 @@
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-31";
+  const FRAME_VERSION = "2605-32";
   const SEND_INTERVAL_MS = 500;
   const NAV_KEEPALIVE_MS = 1200;
   const IFRAME_TIMEOUT_MS = 15000;
@@ -207,6 +207,7 @@
       this.layoutRaf = 0;
       this.expanded = false;
       this.expandedTimer = 0;
+      this.lastFrameDebug = null;
       // Quota guards
       this.visionActiveSinceMs = 0;
       this.warmupTimer = 0;
@@ -509,6 +510,8 @@
         this.fail(data.error || "iframe_error");
       } else if (data.type === "toggle-expanded") {
         this.toggleExpanded();
+      } else if (data.type === "debug-snapshot") {
+        this.lastFrameDebug = data.snapshot || null;
       }
     }
 
@@ -756,6 +759,57 @@
         }
         return false;
       }
+    }
+
+    debugSnapshot() {
+      const runtimeState = window.CarrotLiveRuntimeState || {};
+      const vehicle = this.buildVehiclePayload();
+      const nav = this.buildNavPayload();
+      const route = this.buildRoutePayload();
+      this.safePostMessage({ source: "carrot-vision", type: "debug-request" });
+      return {
+        ts: Date.now(),
+        page: document.body?.dataset?.page || "",
+        vision: isVisionActive(),
+        online: navigator.onLine,
+        visibility: document.visibilityState,
+        landscape: isLandscape(),
+        ready: this.ready,
+        loaded: this.loaded,
+        failed: this.failed,
+        expanded: this.expanded,
+        frameUrl: this.frameUrl,
+        targetOrigin: this.targetOrigin,
+        dockHidden: this.dock?.hidden,
+        dockClass: this.dock?.className || "",
+        dockError: this.dock?.dataset?.error || "",
+        settings: this.settings(),
+        runtime: {
+          ok: Boolean(runtimeState.ok),
+          fetchedAtMs: runtimeState.fetchedAtMs || 0,
+          ageMs: runtimeState.fetchedAtMs ? Date.now() - runtimeState.fetchedAtMs : null,
+          services: Object.keys(runtimeState.services || {}),
+        },
+        payloads: {
+          vehicle,
+          nav: nav ? {
+            active: nav.active,
+            pathLength: String(nav.path || "").length,
+            pathPoints: String(nav.path || "").split(";").filter(Boolean).length,
+            turn: nav.turn,
+            goal: nav.goal,
+            sdi: nav.sdi,
+            road: nav.road,
+            clearReason: nav.clearReason,
+          } : null,
+          route: route ? {
+            active: route.active,
+            coordinates: route.coordinates?.length || 0,
+            count: route.count || 0,
+          } : null,
+        },
+        iframe: this.lastFrameDebug,
+      };
     }
 
     updateLayout() {

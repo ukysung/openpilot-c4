@@ -9,7 +9,7 @@
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-15";
+  const FRAME_VERSION = "2605-16";
   const SEND_INTERVAL_MS = 500;
   const IFRAME_TIMEOUT_MS = 15000;
   const LOCATION_MAX_AGE_MS = 5000;

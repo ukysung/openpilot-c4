@@ -40,7 +40,6 @@ class SideState:
   lane_line_info_mod:        int   = 0
   last_lane_line_mod:        int   = 0
   lane_line_info_edge_detect: bool = False
-  outer_lane_prob:           float = 0.0
 
   # ── 상태 전환 ──────────────────────────────────────────────────
   lane_available_last:    bool = False
@@ -117,7 +116,6 @@ class SideState:
       (self.lane_width_queue[-1] - self.lane_width_queue[0])
       if len(self.lane_width_queue) >= 2 else 0.0
     )
-    self.outer_lane_prob  = float(lane_outer_prob)
     self.dist_to_edge     = float(dist_edge)
     self.dist_to_edge_far = float(dist_edge_far)
 
@@ -215,10 +213,8 @@ class SideState:
                                     bsd_clear_sec: float = 1.0):
     BSD_CLEAR_FRAMES = max(1, int(bsd_clear_sec / DT_MDL))
 
-    lane_avail_confirmed = self.lane_available and (self.outer_lane_prob >= 0.5)
-
     self.lane_change_available_geom = (
-      (lane_avail_confirmed or self.edge_available) and lane_line_info_lt_20
+      (self.lane_available or self.edge_available) and lane_line_info_lt_20
     )
 
     ignore_bsd    = (bsd_level < 0)

@@ -399,6 +399,53 @@
     ctx.restore();
   }
 
+  function roundedRectPath(ctx, x, y, width, height, radius) {
+    const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + width - r, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+    ctx.lineTo(x + width, y + height - r);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+    ctx.lineTo(x + r, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+  }
+
+  function drawSdiMarker(ctx, cx, cy, pxPerMeter, minY, maxY, width) {
+    const sdiDistance = finiteNumber(navState.sdi?.dist);
+    const sdiType = finiteNumber(navState.sdi?.type);
+    if (sdiDistance === null || sdiDistance <= 0 || sdiType === null || sdiType < 0 || !navState.points.length) return;
+    const point = pointAlongPath(navState.points, sdiDistance);
+    if (!point || point.forward < minY || point.forward > maxY) return;
+
+    const canvasPoint = pathPointToCanvas(point, cx, cy, pxPerMeter);
+    const size = Math.max(9, Math.min(15, width * 0.031));
+    const limit = finiteNumber(navState.sdi?.limit);
+
+    ctx.save();
+    ctx.translate(canvasPoint.x, canvasPoint.y);
+    ctx.beginPath();
+    roundedRectPath(ctx, -size * 0.72, -size * 0.52, size * 1.44, size * 1.04, size * 0.22);
+    ctx.fillStyle = "rgba(7, 10, 14, .66)";
+    ctx.fill();
+    ctx.lineWidth = Math.max(1.5, size * 0.16);
+    ctx.strokeStyle = "rgba(255,255,255,.82)";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.25, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 120, 34, .96)";
+    ctx.fill();
+    if (limit && limit > 0 && size >= 12) {
+      ctx.font = `900 ${Math.max(7, size * 0.48)}px Arial, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(255,255,255,.92)";
+      ctx.fillText(String(Math.round(limit)), 0, size * 1.08);
+    }
+    ctx.restore();
+  }
+
   function fitRouteView() {
     if (!routeState.expanded || !routeState.active || !routeState.bounds || !state.map || !window.kakao?.maps) return;
     try {
@@ -533,6 +580,7 @@
     ctx.stroke();
 
     drawTurnMarker(ctx, cx, cy, pxPerMeter, minY, maxY, width);
+    drawSdiMarker(ctx, cx, cy, pxPerMeter, minY, maxY, width);
 
     ctx.restore();
     navState.dirty = false;

@@ -55,6 +55,15 @@
     lastCanvasHeight: 0,
   };
 
+  const routeState = {
+    active: false,
+    expanded: false,
+    coordinates: [],
+    bounds: null,
+    dirty: true,
+    fitted: false,
+  };
+
   // RAF-driven interpolation state. `display` is what's currently on screen.
   // `source` is where the last interp segment started; `target` is the most
   // recent sample. We lerp display from source -> target across `durationMs`.
@@ -121,6 +130,7 @@
     navState.lastCanvasWidth = cssWidth;
     navState.lastCanvasHeight = cssHeight;
     navState.dirty = true;
+    routeState.dirty = true;
     return true;
   }
 
@@ -192,6 +202,57 @@
     updateStatus();
   }
 
+  function routeBounds(coordinates) {
+    if (!coordinates.length) return null;
+    const bounds = {
+      minLat: coordinates[0].lat,
+      maxLat: coordinates[0].lat,
+      minLon: coordinates[0].lon,
+      maxLon: coordinates[0].lon,
+    };
+    for (const point of coordinates) {
+      bounds.minLat = Math.min(bounds.minLat, point.lat);
+      bounds.maxLat = Math.max(bounds.maxLat, point.lat);
+      bounds.minLon = Math.min(bounds.minLon, point.lon);
+      bounds.maxLon = Math.max(bounds.maxLon, point.lon);
+    }
+    return bounds;
+  }
+
+  function setRoute(payload) {
+    const raw = Array.isArray(payload.coordinates) ? payload.coordinates : [];
+    const coordinates = [];
+    for (const point of raw) {
+      const lat = finiteNumber(point?.lat ?? point?.latitude);
+      const lon = finiteNumber(point?.lon ?? point?.longitude);
+      if (!validLatLon(lat, lon)) continue;
+      coordinates.push({ lat, lon });
+      if (coordinates.length >= 1200) break;
+    }
+    routeState.active = Boolean(payload.active) && coordinates.length > 1;
+    routeState.coordinates = routeState.active ? coordinates : [];
+    routeState.bounds = routeState.active ? routeBounds(coordinates) : null;
+    routeState.dirty = true;
+    routeState.fitted = false;
+    if (routeState.expanded) fitRouteView();
+    applyMarkerPosition();
+    renderOverlay();
+    updateStatus();
+  }
+
+  function setExpanded(expanded) {
+    routeState.expanded = Boolean(expanded);
+    routeState.dirty = true;
+    routeState.fitted = false;
+    if (routeState.expanded) {
+      fitRouteView();
+    } else {
+      applyKakaoPosition(state.lat, state.lon);
+    }
+    applyMarkerPosition();
+    renderOverlay();
+  }
+
   function clearOverlay(ctx, width, height) {
     ctx.clearRect(0, 0, width, height);
   }
@@ -204,6 +265,69 @@
       x: cx + (point.lateral * cos + point.forward * sin) * pxPerMeter,
       y: cy + (point.lateral * sin - point.forward * cos) * pxPerMeter,
     };
+  }
+
+  function fitRouteView() {
+    if (!routeState.expanded || !routeState.active || !routeState.bounds || !state.map || !window.kakao?.maps) return;
+    try {
+      const bounds = new window.kakao.maps.LatLngBounds();
+      for (const point of routeState.coordinates) {
+        bounds.extend(new window.kakao.maps.LatLng(point.lat, point.lon));
+      }
+      window.kakao.maps.event.trigger(state.map, "resize");
+      state.map.setBounds(bounds);
+      routeState.fitted = true;
+      routeState.dirty = true;
+    } catch (_) {
+      // If Kakao projection is not ready yet, the canvas fallback still draws the route.
+    }
+  }
+
+  function routePointToCanvas(point, bounds, width, height) {
+    try {
+      const projection = state.map?.getProjection?.();
+      const projected = projection?.containerPointFromCoords?.(new window.kakao.maps.LatLng(point.lat, point.lon));
+      if (projected && Number.isFinite(projected.x) && Number.isFinite(projected.y)) {
+        return { x: projected.x, y: projected.y };
+      }
+    } catch (_) {
+      // Fall through to normalized bounds projection.
+    }
+    const pad = Math.max(18, Math.min(width, height) * 0.08);
+    const lonSpan = Math.max(0.000001, bounds.maxLon - bounds.minLon);
+    const latSpan = Math.max(0.000001, bounds.maxLat - bounds.minLat);
+    return {
+      x: pad + ((point.lon - bounds.minLon) / lonSpan) * Math.max(1, width - pad * 2),
+      y: pad + ((bounds.maxLat - point.lat) / latSpan) * Math.max(1, height - pad * 2),
+    };
+  }
+
+  function renderFullRoute(ctx, width, height) {
+    if (!routeState.expanded || !routeState.active || !routeState.bounds || routeState.coordinates.length < 2) return false;
+    const points = routeState.coordinates;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      const canvasPoint = routePointToCanvas(point, routeState.bounds, width, height);
+      if (index === 0) ctx.moveTo(canvasPoint.x, canvasPoint.y);
+      else ctx.lineTo(canvasPoint.x, canvasPoint.y);
+    });
+    ctx.strokeStyle = "rgba(0, 0, 0, .50)";
+    ctx.lineWidth = Math.max(7, Math.min(14, width * 0.018));
+    ctx.stroke();
+
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      const canvasPoint = routePointToCanvas(point, routeState.bounds, width, height);
+      if (index === 0) ctx.moveTo(canvasPoint.x, canvasPoint.y);
+      else ctx.lineTo(canvasPoint.x, canvasPoint.y);
+    });
+    ctx.strokeStyle = "rgba(255, 118, 36, .94)";
+    ctx.lineWidth = Math.max(4, Math.min(8, width * 0.010));
+    ctx.stroke();
+    routeState.dirty = false;
+    return true;
   }
 
   function renderOverlay() {
@@ -221,11 +345,18 @@
       navState.lastViewRange = viewRange;
       navState.dirty = true;
     }
-    if (!navState.dirty && !resized) return;
+    if (!navState.dirty && !routeState.dirty && !resized) return;
 
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     clearOverlay(ctx, width, height);
+    if (routeState.expanded && routeState.active) {
+      if (renderFullRoute(ctx, width, height)) {
+        ctx.restore();
+        navState.dirty = false;
+        return;
+      }
+    }
     if (!navState.active || navState.points.length < 2) {
       ctx.restore();
       navState.dirty = false;
@@ -277,6 +408,10 @@
     if (!state.map || !window.kakao?.maps) return;
     try {
       window.kakao.maps.event.trigger(state.map, "resize");
+      if (routeState.expanded && routeState.active) {
+        fitRouteView();
+        return;
+      }
       state.map.setCenter(new window.kakao.maps.LatLng(state.lat, state.lon));
     } catch (_) {
       // Resize events can race while the iframe is still settling.
@@ -341,6 +476,8 @@
       `${age}s`,
     ];
     if (navState.active) parts.push(`P${navState.points.length}`);
+    if (routeState.active) parts.push(`R${routeState.coordinates.length}`);
+    if (routeState.expanded) parts.push("expanded");
     if (state.error) parts.push(state.error);
     statusText.textContent = parts.join(" / ");
   }
@@ -357,8 +494,20 @@
     marker.style.setProperty("--heading", rotation);
   }
 
+  function applyMarkerPosition() {
+    if (routeState.expanded && routeState.active && routeState.bounds) {
+      const point = routePointToCanvas({ lat: state.lat, lon: state.lon }, routeState.bounds, overlayCanvas?.clientWidth || 1, overlayCanvas?.clientHeight || 1);
+      marker.style.setProperty("--vehicle-marker-left", `${point.x}px`);
+      marker.style.setProperty("--vehicle-marker-top", `${point.y}px`);
+      return;
+    }
+    marker.style.setProperty("--vehicle-marker-left", "50%");
+    marker.style.setProperty("--vehicle-marker-top", "50%");
+  }
+
   function applyKakaoPosition(lat, lon) {
     if (!state.map || !window.kakao?.maps) return;
+    if (routeState.expanded && routeState.active) return;
     const position = new window.kakao.maps.LatLng(lat, lon);
     state.map.setCenter(position);
     setKakaoLevel(position);
@@ -366,6 +515,7 @@
 
   function renderDisplay() {
     applyMarkerRotation(interp.display.heading);
+    applyMarkerPosition();
     updateMockPan(interp.display.lat, interp.display.lon);
     applyKakaoPosition(interp.display.lat, interp.display.lon);
     renderOverlay();
@@ -547,6 +697,10 @@
       applyVehicle(data);
     } else if (data.type === "nav") {
       setNav(data);
+    } else if (data.type === "route") {
+      setRoute(data);
+    } else if (data.type === "expanded") {
+      setExpanded(data.expanded);
     }
   }
 
@@ -643,6 +797,7 @@
     window.addEventListener("resize", () => {
       relayoutKakaoMap();
       navState.dirty = true;
+      routeState.dirty = true;
       renderOverlay();
     });
     await initProvider();

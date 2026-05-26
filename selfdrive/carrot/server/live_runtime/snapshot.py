@@ -503,6 +503,31 @@ def _build_nav_instruction(service: Any, previous: dict[str, Any] | None = None)
   return p
 
 
+def _build_nav_route(service: Any, previous: dict[str, Any] | None = None) -> dict[str, Any]:
+  p = previous if isinstance(previous, dict) else {}
+  coordinates = _ensure_list(p, "coordinates")
+  coordinates.clear()
+  raw_coordinates = safe_get(service, "coordinates")
+  if raw_coordinates is None:
+    p["count"] = 0
+    return p
+  try:
+    for idx, coord in enumerate(raw_coordinates):
+      if idx >= 2000:
+        break
+      lat = safe_float(safe_get(coord, "latitude"))
+      lon = safe_float(safe_get(coord, "longitude"))
+      if lat is None or lon is None:
+        continue
+      if abs(lat) > 90 or abs(lon) > 180 or (lat == 0 and lon == 0):
+        continue
+      coordinates.append({"lat": lat, "lon": lon})
+  except Exception:
+    coordinates.clear()
+  p["count"] = len(coordinates)
+  return p
+
+
 def _build_car_control(service: Any, previous: dict[str, Any] | None = None) -> dict[str, Any]:
   p = previous if isinstance(previous, dict) else {}
   p["latActive"] = safe_bool(safe_get(service, "latActive"))
@@ -526,5 +551,6 @@ _SERVICE_BUILDERS: dict[str, Any] = {
   "gpsLocationExternal": _build_gps,
   "lateralPlan": _build_lateral_plan,
   "navInstructionCarrot": _build_nav_instruction,
+  "navRoute": _build_nav_route,
   "carControl": _build_car_control,
 }

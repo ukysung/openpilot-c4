@@ -134,8 +134,8 @@ body {
 
 .kmap-marker {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  left: var(--vehicle-marker-left, 50%);
+  top: var(--vehicle-marker-top, 50%);
   width: clamp(34px, 8.5vw, 48px);
   height: clamp(42px, 10.5vw, 60px);
   transform: translate(-50%, -50%) rotate(var(--heading, 0deg));

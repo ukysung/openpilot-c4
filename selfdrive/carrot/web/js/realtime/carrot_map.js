@@ -9,7 +9,7 @@
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-21";
+  const FRAME_VERSION = "2605-22";
   const SEND_INTERVAL_MS = 500;
   const IFRAME_TIMEOUT_MS = 15000;
   const LOCATION_MAX_AGE_MS = 5000;
@@ -189,6 +189,7 @@
       this.lastHeading = 0;
       this.lastPayloadSig = "";
       this.lastNavPayloadSig = "";
+      this.lastRoutePayloadSig = "";
       this.lastEnabled = false;
       this.resizeObserver = null;
       this.layoutRaf = 0;
@@ -356,6 +357,8 @@
       this.frameUrl = url;
       this.targetOrigin = resolveTargetOrigin(url);
       this.lastPayloadSig = "";
+      this.lastNavPayloadSig = "";
+      this.lastRoutePayloadSig = "";
       // Hide while the new iframe is loading so we don't flash an empty
       // box. show() will run again from handleMessage("ready").
       this.hide();
@@ -411,6 +414,8 @@
         this.ready = false;
         this.frameUrl = "";
         this.lastPayloadSig = "";
+        this.lastNavPayloadSig = "";
+        this.lastRoutePayloadSig = "";
         this.dock?.removeAttribute("data-error");
         this.frame?.removeAttribute("src");
         this.sync();
@@ -430,6 +435,15 @@
       this.dock.classList.add("is-visible");
     }
 
+    sendExpandedState() {
+      if (!this.frame?.contentWindow) return;
+      this.frame.contentWindow.postMessage({
+        source: "carrot-vision",
+        type: "expanded",
+        expanded: this.expanded,
+      }, this.targetOrigin);
+    }
+
     setExpanded(expanded) {
       const next = Boolean(expanded);
       if (this.expandedTimer) {
@@ -439,6 +453,7 @@
       this.expanded = next;
       this.dock?.classList.toggle("is-expanded", next);
       this.updateLayout();
+      this.sendExpandedState();
       if (next) {
         this.expandedTimer = window.setTimeout(() => {
           this.expandedTimer = 0;
@@ -469,6 +484,7 @@
         }
         // Now safe to reveal the dock; iframe has actual content.
         if (this.shouldRun()) this.show();
+        this.sendExpandedState();
         this.tick();
       } else if (data.type === "error") {
         this.fail(data.error || "iframe_error");
@@ -609,6 +625,64 @@
       this.frame.contentWindow.postMessage(payload, this.targetOrigin);
     }
 
+    normalizeRouteCoordinates(coordinates) {
+      if (!Array.isArray(coordinates) || coordinates.length < 2) return [];
+      const clean = [];
+      for (const point of coordinates) {
+        const lat = finiteNumber(point?.lat ?? point?.latitude);
+        const lon = finiteNumber(point?.lon ?? point?.longitude);
+        if (!validLatLon(lat, lon)) continue;
+        clean.push({ lat, lon });
+      }
+      if (clean.length <= 900) return clean;
+      const stride = Math.ceil(clean.length / 900);
+      const sampled = clean.filter((_, index) => index % stride === 0);
+      const last = clean[clean.length - 1];
+      const sampledLast = sampled[sampled.length - 1];
+      if (!sampledLast || sampledLast.lat !== last.lat || sampledLast.lon !== last.lon) sampled.push(last);
+      return sampled;
+    }
+
+    buildRoutePayload() {
+      const empty = { source: "carrot-vision", type: "route", active: false, coordinates: [], count: 0, ts: Date.now() };
+      const runtimeState = window.CarrotLiveRuntimeState;
+      if (!runtimeState?.ok) return empty;
+      const fetchedAtMs = finiteNumber(runtimeState.fetchedAtMs) || Date.now();
+      if (Date.now() - fetchedAtMs > LOCATION_MAX_AGE_MS) return empty;
+      const navRoute = runtimeState.services?.navRoute || {};
+      const coordinates = this.normalizeRouteCoordinates(navRoute.coordinates || []);
+      return {
+        source: "carrot-vision",
+        type: "route",
+        active: coordinates.length > 1,
+        coordinates,
+        count: finiteNumber(navRoute.count) ?? coordinates.length,
+        ts: fetchedAtMs,
+      };
+    }
+
+    sendRoutePayload(payload) {
+      if (!payload || !this.frame?.contentWindow) return;
+      const coordinates = payload.coordinates || [];
+      const first = coordinates[0] || {};
+      const middle = coordinates[Math.floor(coordinates.length / 2)] || {};
+      const last = coordinates[coordinates.length - 1] || {};
+      const sig = [
+        payload.active ? "1" : "0",
+        coordinates.length,
+        payload.count ?? "",
+        finiteNumber(first.lat)?.toFixed(6) ?? "",
+        finiteNumber(first.lon)?.toFixed(6) ?? "",
+        finiteNumber(middle.lat)?.toFixed(6) ?? "",
+        finiteNumber(middle.lon)?.toFixed(6) ?? "",
+        finiteNumber(last.lat)?.toFixed(6) ?? "",
+        finiteNumber(last.lon)?.toFixed(6) ?? "",
+      ].join("|");
+      if (sig === this.lastRoutePayloadSig) return;
+      this.lastRoutePayloadSig = sig;
+      this.frame.contentWindow.postMessage(payload, this.targetOrigin);
+    }
+
     tick() {
       if (!this.shouldRun()) {
         this.sync();
@@ -618,14 +692,17 @@
       if (!this.ready) return;
       const payload = this.buildVehiclePayload();
       const navPayload = this.buildNavPayload();
+      const routePayload = this.buildRoutePayload();
       if (!payload) {
         this.sendNavPayload(navPayload);
+        this.sendRoutePayload(routePayload);
         this.show();
         return;
       }
       const now = Date.now();
       if (now - this.lastSendAt < SEND_INTERVAL_MS - 80) {
         this.sendNavPayload(navPayload);
+        this.sendRoutePayload(routePayload);
         return;
       }
       const sig = [
@@ -636,12 +713,14 @@
       ].join("|");
       if (sig === this.lastPayloadSig && now - this.lastSendAt < SEND_INTERVAL_MS * 4) {
         this.sendNavPayload(navPayload);
+        this.sendRoutePayload(routePayload);
         return;
       }
       this.lastPayloadSig = sig;
       this.lastSendAt = now;
       this.frame.contentWindow.postMessage(payload, this.targetOrigin);
       this.sendNavPayload(navPayload);
+      this.sendRoutePayload(routePayload);
       this.show();
     }
 

@@ -206,6 +206,7 @@
 
     init() {
       if (!this.dock || !this.frame) return;
+      this.frame.setAttribute("loading", "eager");
       window.addEventListener("message", this.handleMessage);
       window.addEventListener("resize", this.requestLayout);
       window.addEventListener("orientationchange", this.requestLayout);

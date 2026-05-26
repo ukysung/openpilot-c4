@@ -9,8 +9,9 @@
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-22";
+  const FRAME_VERSION = "2605-23";
   const SEND_INTERVAL_MS = 500;
+  const NAV_KEEPALIVE_MS = 1200;
   const IFRAME_TIMEOUT_MS = 15000;
   const LOCATION_MAX_AGE_MS = 5000;
   const EXPANDED_AUTO_HIDE_MS = 8000;
@@ -189,6 +190,7 @@
       this.lastHeading = 0;
       this.lastPayloadSig = "";
       this.lastNavPayloadSig = "";
+      this.lastNavPayloadSentAt = 0;
       this.lastRoutePayloadSig = "";
       this.lastEnabled = false;
       this.resizeObserver = null;
@@ -358,6 +360,7 @@
       this.targetOrigin = resolveTargetOrigin(url);
       this.lastPayloadSig = "";
       this.lastNavPayloadSig = "";
+      this.lastNavPayloadSentAt = 0;
       this.lastRoutePayloadSig = "";
       // Hide while the new iframe is loading so we don't flash an empty
       // box. show() will run again from handleMessage("ready").
@@ -436,12 +439,12 @@
     }
 
     sendExpandedState() {
-      if (!this.frame?.contentWindow) return;
-      this.frame.contentWindow.postMessage({
+      if (!this.ready || !this.frame?.contentWindow) return;
+      this.safePostMessage({
         source: "carrot-vision",
         type: "expanded",
         expanded: this.expanded,
-      }, this.targetOrigin);
+      });
     }
 
     setExpanded(expanded) {
@@ -455,6 +458,8 @@
       this.updateLayout();
       this.sendExpandedState();
       if (next) {
+        this.lastRoutePayloadSig = "";
+        this.tick();
         this.expandedTimer = window.setTimeout(() => {
           this.expandedTimer = 0;
           this.setExpanded(false);
@@ -605,6 +610,7 @@
 
     sendNavPayload(payload) {
       if (!payload || !this.frame?.contentWindow) return;
+      const now = Date.now();
       const sig = [
         payload.active ? "1" : "0",
         payload.path,
@@ -620,9 +626,10 @@
         payload.road ?? "",
         payload.clearReason ?? "",
       ].join("|");
-      if (sig === this.lastNavPayloadSig) return;
+      if (sig === this.lastNavPayloadSig && now - this.lastNavPayloadSentAt < NAV_KEEPALIVE_MS) return;
       this.lastNavPayloadSig = sig;
-      this.frame.contentWindow.postMessage(payload, this.targetOrigin);
+      this.lastNavPayloadSentAt = now;
+      this.safePostMessage(payload);
     }
 
     normalizeRouteCoordinates(coordinates) {
@@ -680,7 +687,7 @@
       ].join("|");
       if (sig === this.lastRoutePayloadSig) return;
       this.lastRoutePayloadSig = sig;
-      this.frame.contentWindow.postMessage(payload, this.targetOrigin);
+      this.safePostMessage(payload);
     }
 
     tick() {
@@ -718,10 +725,23 @@
       }
       this.lastPayloadSig = sig;
       this.lastSendAt = now;
-      this.frame.contentWindow.postMessage(payload, this.targetOrigin);
+      this.safePostMessage(payload);
       this.sendNavPayload(navPayload);
       this.sendRoutePayload(routePayload);
       this.show();
+    }
+
+    safePostMessage(payload) {
+      if (!payload || !this.frame?.contentWindow) return false;
+      try {
+        this.frame.contentWindow.postMessage(payload, this.targetOrigin);
+        return true;
+      } catch (error) {
+        if (window.CARROT_MAP_DEBUG) {
+          console.warn("[carrot-map] postMessage skipped", error);
+        }
+        return false;
+      }
     }
 
     updateLayout() {

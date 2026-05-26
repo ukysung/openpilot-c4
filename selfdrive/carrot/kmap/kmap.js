@@ -8,7 +8,7 @@
   const INTERP_BASE_MS = 1100;
   const INTERP_MAX_MS = 1800;
   const INTERP_MIN_MS = 350;
-  const NAV_STALE_MS = 2500;
+  const NAV_STALE_MS = 5000;
 
   const root = document.getElementById("kmapRoot");
   const kakaoMapEl = document.getElementById("kakaoMap");

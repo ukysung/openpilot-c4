@@ -136,13 +136,15 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: clamp(36px, 10vw, 54px);
-  height: clamp(44px, 12vw, 66px);
+  width: clamp(34px, 8.5vw, 48px);
+  height: clamp(42px, 10.5vw, 60px);
   transform: translate(-50%, -50%) rotate(var(--heading, 0deg));
   transform-origin: 50% 50%;
   pointer-events: none;
   will-change: transform;
   z-index: 7;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .45))
+          drop-shadow(0 6px 8px rgba(0, 0, 0, .42));
 }
 
 .kmap-marker::before {
@@ -150,32 +152,25 @@ body {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(255,255,255,.58) 0%, rgba(255,255,255,0) 22%),
-    linear-gradient(180deg, #ffb35a 0%, #f56712 50%, #8a2c05 100%);
-  clip-path: polygon(50% 2%, 100% 80%, 66% 66%, 50% 100%, 34% 66%, 0% 80%);
-  filter:
-    drop-shadow(0 0 1.6px rgba(0,0,0,1))
-    drop-shadow(0 0 1.6px rgba(0,0,0,.95))
-    drop-shadow(0 0 1.6px rgba(0,0,0,.85))
-    drop-shadow(0 5px 9px rgba(0,0,0,.60))
-    drop-shadow(0 0 14px rgba(255,130,40,.40));
+    linear-gradient(160deg, rgba(255,255,255,.44) 0 18%, rgba(255,255,255,0) 38%),
+    linear-gradient(180deg, #ffc06c 0%, #f27a22 42%, #b94312 100%);
+  clip-path: polygon(50% 4%, 91% 88%, 61% 73%, 50% 98%, 39% 73%, 9% 88%);
+  border-radius: 14px;
 }
 
 .kmap-marker::after {
   content: "";
   position: absolute;
   left: 50%;
-  top: 78%;
-  width: 26%;
+  top: 52%;
+  width: 16%;
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: #ffffff;
+  background: rgba(255,255,255,.82);
   box-shadow:
-    0 0 0 2px rgba(0,0,0,.95),
-    0 0 0 4px rgba(255,255,255,.65),
-    0 0 6px rgba(0,0,0,.55),
-    0 2px 6px rgba(0,0,0,.50);
+    0 0 0 2px rgba(159,58,15,.42),
+    0 1px 3px rgba(0,0,0,.35);
 }
 
 .kmap-root[data-status="waiting"] .kmap-marker,

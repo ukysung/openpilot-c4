@@ -116,6 +116,17 @@
     return 140;
   }
 
+  function expandedFallbackRange(speedKph) {
+    return Math.round(viewRangeMeters(speedKph) * 2.2);
+  }
+
+  function kakaoDisplayLevel() {
+    if (routeState.expanded && !routeState.active) {
+      return Math.min(8, state.level + 2);
+    }
+    return state.level;
+  }
+
   function resizeOverlayCanvas() {
     if (!overlayCanvas) return false;
     const rect = overlayCanvas.getBoundingClientRect();
@@ -247,8 +258,9 @@
     if (routeState.expanded) {
       fitRouteView();
     } else {
-      applyKakaoPosition(state.lat, state.lon);
+      applyKakaoPosition(state.lat, state.lon, true);
     }
+    if (routeState.expanded && !routeState.active) applyKakaoPosition(state.lat, state.lon, true);
     applyMarkerPosition();
     renderOverlay();
   }
@@ -339,7 +351,7 @@
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const width = overlayCanvas.width / dpr;
     const height = overlayCanvas.height / dpr;
-    const viewRange = viewRangeMeters(state.speed);
+    const viewRange = routeState.expanded && !routeState.active ? expandedFallbackRange(state.speed) : viewRangeMeters(state.speed);
     expireNavIfStale();
     if (Math.abs(viewRange - navState.lastViewRange) > 1) {
       navState.lastViewRange = viewRange;
@@ -431,11 +443,12 @@
     root.style.setProperty("--kmap-level", String(state.level));
   }
 
-  function setKakaoLevel(position) {
+  function setKakaoLevel(position, force = false) {
     if (!state.map) return;
     const now = Date.now();
-    if (state.level === state.map.getLevel?.() || now - state.lastLevelChangeAt <= 2800) return;
-    state.map.setLevel(state.level, { animate: false, anchor: position });
+    const level = kakaoDisplayLevel();
+    if (level === state.map.getLevel?.() || (!force && now - state.lastLevelChangeAt <= 2800)) return;
+    state.map.setLevel(level, { animate: false, anchor: position });
     state.lastLevelChangeAt = now;
   }
 
@@ -505,12 +518,12 @@
     marker.style.setProperty("--vehicle-marker-top", "50%");
   }
 
-  function applyKakaoPosition(lat, lon) {
+  function applyKakaoPosition(lat, lon, forceLevel = false) {
     if (!state.map || !window.kakao?.maps) return;
     if (routeState.expanded && routeState.active) return;
     const position = new window.kakao.maps.LatLng(lat, lon);
     state.map.setCenter(position);
-    setKakaoLevel(position);
+    setKakaoLevel(position, forceLevel);
   }
 
   function renderDisplay() {

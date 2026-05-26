@@ -16,6 +16,9 @@
   const surface = document.getElementById("mapSurface");
   const marker = document.getElementById("vehicleMarker");
   const statusText = document.getElementById("statusText");
+  const navInfo = document.getElementById("navInfo");
+  const navRoad = document.getElementById("navRoad");
+  const navMeta = document.getElementById("navMeta");
   const demoPanel = document.getElementById("demoPanel");
   const demoMove = document.getElementById("demoMove");
   const demoMode = document.getElementById("demoMode");
@@ -166,6 +169,53 @@
     return points;
   }
 
+  function formatDistance(meters) {
+    const value = finiteNumber(meters);
+    if (value === null || value <= 0) return "";
+    if (value < 950) return `${Math.round(value)}m`;
+    return `${(value / 1000).toFixed(value < 10000 ? 1 : 0)}km`;
+  }
+
+  function formatDuration(seconds) {
+    const value = finiteNumber(seconds);
+    if (value === null || value <= 0) return "";
+    const minutes = Math.max(1, Math.round(value / 60));
+    if (minutes < 60) return `${minutes}분`;
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return rest ? `${hours}시간 ${rest}분` : `${hours}시간`;
+  }
+
+  function updateNavInfo() {
+    if (!navInfo || !navRoad || !navMeta) return;
+    if (!navState.active) {
+      navInfo.hidden = true;
+      navRoad.textContent = "";
+      navMeta.textContent = "";
+      return;
+    }
+
+    const road = navState.road || navState.turn?.text || "";
+    const goalDist = formatDistance(navState.goal?.dist);
+    const goalTime = formatDuration(navState.goal?.timeSec);
+    const turnDist = formatDistance(navState.turn?.dist);
+    const sdiDist = formatDistance(navState.sdi?.dist);
+    const sdiLimit = finiteNumber(navState.sdi?.limit);
+    const meta = [];
+    if (goalDist) meta.push(goalTime ? `${goalDist} · ${goalTime}` : goalDist);
+    if (turnDist) meta.push(`회전 ${turnDist}`);
+    if (sdiDist) meta.push(sdiLimit && sdiLimit > 0 ? `${sdiLimit} 제한 ${sdiDist}` : `단속 ${sdiDist}`);
+
+    if (!road && meta.length === 0) {
+      navInfo.hidden = true;
+      return;
+    }
+    navRoad.textContent = road || "경로 안내";
+    navMeta.textContent = meta.slice(0, 2).join(" / ");
+    navMeta.hidden = navMeta.textContent.length === 0;
+    navInfo.hidden = false;
+  }
+
   function clearNav() {
     if (!navState.active && navState.points.length === 0 && !navState.path) return;
     if (navState.staleTimer) {
@@ -181,6 +231,7 @@
     navState.sdi = null;
     navState.updatedAt = 0;
     navState.dirty = true;
+    updateNavInfo();
     renderOverlay();
     updateStatus();
   }
@@ -209,6 +260,7 @@
     if (navState.staleTimer) window.clearTimeout(navState.staleTimer);
     navState.staleTimer = window.setTimeout(clearNav, NAV_STALE_MS + 150);
     navState.dirty = true;
+    updateNavInfo();
     renderOverlay();
     updateStatus();
   }

@@ -57,17 +57,36 @@ const WEB_SETTINGS_GROUPS = [
         defaultDesc: "Show the kmap iframe on the drive vision screen.",
       },
       {
-        id: "kmap_display_mode",
-        type: "select",
-        titleKey: "web_kmap_display_mode",
-        defaultTitle: "Map mode",
-        descKey: "web_kmap_display_mode_desc",
-        defaultDesc: "Choose Kakao box, minimal mini, or offline schematic mode.",
-        options: [
-          { value: "box", labelKey: "web_kmap_mode_box", defaultLabel: "Kakao box" },
-          { value: "mini", labelKey: "web_kmap_mode_mini", defaultLabel: "Mini" },
-          { value: "schematic", labelKey: "web_kmap_mode_schematic", defaultLabel: "Schematic" },
-        ],
+        id: "kmap_overlay_heading_up",
+        type: "toggle",
+        titleKey: "web_kmap_heading_up",
+        defaultTitle: "Heading-up path",
+        descKey: "web_kmap_heading_up_desc",
+        defaultDesc: "Draw the local path relative to the vehicle heading.",
+      },
+      {
+        id: "kmap_overlay_show_compass",
+        type: "toggle",
+        titleKey: "web_kmap_show_compass",
+        defaultTitle: "Map compass",
+        descKey: "web_kmap_show_compass_desc",
+        defaultDesc: "Show a tiny north indicator in the map.",
+      },
+      {
+        id: "kmap_overlay_show_grid",
+        type: "toggle",
+        titleKey: "web_kmap_show_grid",
+        defaultTitle: "Map grid",
+        descKey: "web_kmap_show_grid_desc",
+        defaultDesc: "Show a subtle overlay grid for map tuning.",
+      },
+      {
+        id: "kmap_overlay_curvature_color",
+        type: "toggle",
+        titleKey: "web_kmap_curvature_color",
+        defaultTitle: "Curve color",
+        descKey: "web_kmap_curvature_color_desc",
+        defaultDesc: "Tint local path segments more strongly on sharper bends.",
       },
       {
         id: "kmap_debug",
@@ -91,7 +110,10 @@ const WEB_SETTING_DEFAULTS = {
   vision_fullscreen_default: true,
   kmap_enabled: false,
   kmap_url: "https://jominki354.github.io/kmap/",
-  kmap_display_mode: "box",
+  kmap_overlay_heading_up: true,
+  kmap_overlay_show_grid: false,
+  kmap_overlay_show_compass: true,
+  kmap_overlay_curvature_color: false,
   kmap_debug: false,
 };
 
@@ -118,11 +140,12 @@ function normalizeWebSettingValue(key, value) {
     const lang = String(value || "").trim().toLowerCase();
     return ["en", "ko", "zh"].includes(lang) ? lang : "";
   }
-  if (key === "kmap_enabled") {
-    if (typeof value === "string") return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
-    return Boolean(value);
-  }
-  if (key === "vision_fullscreen_default") {
+  if (key === "kmap_enabled" ||
+      key === "vision_fullscreen_default" ||
+      key === "kmap_overlay_heading_up" ||
+      key === "kmap_overlay_show_grid" ||
+      key === "kmap_overlay_show_compass" ||
+      key === "kmap_overlay_curvature_color") {
     if (typeof value === "string") return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
     return Boolean(value);
   }
@@ -133,10 +156,6 @@ function normalizeWebSettingValue(key, value) {
   if (key === "kmap_url") {
     const url = String(value || "").trim();
     return url || WEB_SETTING_DEFAULTS.kmap_url;
-  }
-  if (key === "kmap_display_mode") {
-    const mode = String(value || "").trim().toLowerCase();
-    return ["box", "mini", "schematic"].includes(mode) ? mode : WEB_SETTING_DEFAULTS.kmap_display_mode;
   }
   return value;
 }

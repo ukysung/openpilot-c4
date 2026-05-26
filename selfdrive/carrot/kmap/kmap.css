@@ -64,24 +64,6 @@ body {
   filter: saturate(.94) brightness(1) contrast(.98);
 }
 
-.kmap-root[data-mode="mini"] .kmap-shell {
-  border-color: rgba(255,255,255,.14);
-  background: transparent;
-  box-shadow: 0 10px 26px rgba(0,0,0,.28);
-}
-
-.kmap-root[data-mode="mini"] .kmap-kakao-map,
-.kmap-root[data-mode="mini"] .kmap-surface,
-.kmap-root[data-mode="mini"] .kmap-overlay {
-  -webkit-mask-image: radial-gradient(circle at center, #000 62%, rgba(0,0,0,.78) 74%, transparent 100%);
-  mask-image: radial-gradient(circle at center, #000 62%, rgba(0,0,0,.78) 74%, transparent 100%);
-}
-
-.kmap-root[data-mode="schematic"] .kmap-shell {
-  border-color: rgba(255,255,255,.16);
-  background: rgba(15, 20, 25, .86);
-}
-
 .kmap-surface {
   position: absolute;
   inset: -16%;
@@ -109,6 +91,35 @@ body {
   inset: 0;
   z-index: 6;
   pointer-events: none;
+}
+
+.kmap-root[data-grid="1"] .kmap-overlay-html::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: .22;
+  background:
+    linear-gradient(rgba(24, 31, 38, .26) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(24, 31, 38, .26) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.kmap-compass {
+  position: absolute;
+  right: clamp(6px, 2.4vw, 10px);
+  top: clamp(6px, 2.4vw, 10px);
+  width: clamp(18px, 5vw, 24px);
+  height: clamp(18px, 5vw, 24px);
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.28);
+  background: rgba(8, 12, 16, .42);
+  color: rgba(255,255,255,.78);
+  font-size: clamp(9px, 2.5vw, 11px);
+  font-weight: 900;
+  line-height: clamp(18px, 5vw, 24px);
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  transform: rotate(var(--compass-rotation, 0deg));
 }
 
 .kmap-nav-info {

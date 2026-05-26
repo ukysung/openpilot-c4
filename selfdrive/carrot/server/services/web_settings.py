@@ -7,7 +7,6 @@ from ..config import CARROT_WEB_SETTINGS_PATH
 
 WEB_PRIMARY_PAGES = {"last", "carrot", "setting", "tools", "logs", "terminal"}
 WEB_LANGUAGES = {"", "en", "ko", "zh"}
-KMAP_DISPLAY_MODES = {"box", "mini", "schematic"}
 
 DEFAULT_WEB_SETTINGS: Dict[str, Any] = {
   "auto_update_git_pull": False,
@@ -16,7 +15,10 @@ DEFAULT_WEB_SETTINGS: Dict[str, Any] = {
   "vision_fullscreen_default": True,
   "kmap_enabled": False,
   "kmap_url": "https://jominki354.github.io/kmap/",
-  "kmap_display_mode": "box",
+  "kmap_overlay_heading_up": True,
+  "kmap_overlay_show_grid": False,
+  "kmap_overlay_show_compass": True,
+  "kmap_overlay_curvature_color": False,
   "kmap_debug": False,
 }
 
@@ -50,11 +52,6 @@ def _normalize_kmap_url(value: Any) -> str:
   return url or DEFAULT_WEB_SETTINGS["kmap_url"]
 
 
-def _normalize_kmap_display_mode(value: Any) -> str:
-  mode = str(value or "").strip().lower()
-  return mode if mode in KMAP_DISPLAY_MODES else DEFAULT_WEB_SETTINGS["kmap_display_mode"]
-
-
 def sanitize_web_settings(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
   raw = raw or {}
   settings = dict(DEFAULT_WEB_SETTINGS)
@@ -69,7 +66,10 @@ def sanitize_web_settings(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
   settings["vision_fullscreen_default"] = _to_bool(raw.get("vision_fullscreen_default", settings["vision_fullscreen_default"]))
   settings["kmap_enabled"] = _to_bool(raw.get("kmap_enabled", settings["kmap_enabled"]))
   settings["kmap_url"] = _normalize_kmap_url(raw.get("kmap_url", settings["kmap_url"]))
-  settings["kmap_display_mode"] = _normalize_kmap_display_mode(raw.get("kmap_display_mode", settings["kmap_display_mode"]))
+  settings["kmap_overlay_heading_up"] = _to_bool(raw.get("kmap_overlay_heading_up", settings["kmap_overlay_heading_up"]))
+  settings["kmap_overlay_show_grid"] = _to_bool(raw.get("kmap_overlay_show_grid", settings["kmap_overlay_show_grid"]))
+  settings["kmap_overlay_show_compass"] = _to_bool(raw.get("kmap_overlay_show_compass", settings["kmap_overlay_show_compass"]))
+  settings["kmap_overlay_curvature_color"] = _to_bool(raw.get("kmap_overlay_curvature_color", settings["kmap_overlay_curvature_color"]))
   settings["kmap_debug"] = _to_bool(raw.get("kmap_debug", settings["kmap_debug"]))
   return settings
 

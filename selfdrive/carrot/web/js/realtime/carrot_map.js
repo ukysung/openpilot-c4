@@ -11,10 +11,11 @@
   //   - Try to batch multiple iframe-side changes into one bump per week.
   const FRAME_VERSION = "2605-15";
   const SEND_INTERVAL_MS = 500;
-  const IFRAME_TIMEOUT_MS = 8000;
+  const IFRAME_TIMEOUT_MS = 15000;
   const LOCATION_MAX_AGE_MS = 5000;
   // Quota guard windows
   const VISION_WARMUP_MS = 3500;           // require N ms of stable vision-active before loading SDK
+  const RETRY_AFTER_MS = 15000;            // recover from transient iframe/network stalls
   const DAILY_WARN_THRESHOLD = 12;          // console.warn when this many SDK loads/day on one device
   const DAILY_HARD_CAP = 30;                // circuit breaker: stop loading further today after this count
   const DEV_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
@@ -192,6 +193,7 @@
       // Quota guards
       this.visionActiveSinceMs = 0;
       this.warmupTimer = 0;
+      this.retryTimer = 0;
       this.circuitTrippedToday = false;
 
       this.handleMessage = this.handleMessage.bind(this);
@@ -283,6 +285,12 @@
       this.warmupTimer = 0;
     }
 
+    cancelRetry() {
+      if (!this.retryTimer) return;
+      window.clearTimeout(this.retryTimer);
+      this.retryTimer = 0;
+    }
+
     sync() {
       this.updateLayout();
       const settings = this.settings();
@@ -337,6 +345,7 @@
       this.ready = false;
       this.loaded = false;
       this.failed = false;
+      this.cancelRetry();
       this.frameUrl = url;
       this.targetOrigin = resolveTargetOrigin(url);
       this.lastPayloadSig = "";
@@ -386,6 +395,19 @@
       this.stopSending();
       this.hide();
       this.dock?.setAttribute("data-error", reason || "failed");
+      this.clearLoadTimer();
+      this.cancelRetry();
+      this.retryTimer = window.setTimeout(() => {
+        this.retryTimer = 0;
+        this.failed = false;
+        this.loaded = false;
+        this.ready = false;
+        this.frameUrl = "";
+        this.lastPayloadSig = "";
+        this.dock?.removeAttribute("data-error");
+        this.frame?.removeAttribute("src");
+        this.sync();
+      }, RETRY_AFTER_MS);
     }
 
     hide() {
@@ -404,9 +426,12 @@
       const data = event.data || {};
       if (data.source !== "carrot-kmap") return;
       if (data.type === "ready") {
+        this.failed = false;
         this.ready = true;
         this.loaded = true;
+        this.cancelRetry();
         this.clearLoadTimer();
+        this.dock?.removeAttribute("data-error");
         // Only the Kakao provider actually consumes quota. Mock loads
         // (forceMock=1, dev host, fallback) report sdkLoadedAt=0.
         if (Number(data.sdkLoadedAt) > 0 && data.provider === "kakao") {

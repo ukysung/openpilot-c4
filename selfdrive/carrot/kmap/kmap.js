@@ -9,6 +9,7 @@
   const INTERP_MAX_MS = 1800;
   const INTERP_MIN_MS = 350;
   const NAV_STALE_MS = 5000;
+  const EARTH_RADIUS_M = 6378137;
 
   const root = document.getElementById("kmapRoot");
   const kakaoMapEl = document.getElementById("kakaoMap");
@@ -62,6 +63,7 @@
     lastViewRange: 0,
     lastCanvasWidth: 0,
     lastCanvasHeight: 0,
+    lastProjectionSig: "",
   };
 
   const routeState = {
@@ -333,7 +335,44 @@
     ctx.clearRect(0, 0, width, height);
   }
 
+  function shouldUseMapProjection() {
+    return state.provider === "kakao" && state.map && window.kakao?.maps;
+  }
+
+  function localPointToLatLng(point) {
+    const originLat = finiteNumber(interp.display.lat) ?? state.lat;
+    const originLon = finiteNumber(interp.display.lon) ?? state.lon;
+    if (!validLatLon(originLat, originLon)) return null;
+
+    const headingRad = (interp.display.heading || state.heading || 0) * Math.PI / 180;
+    const forward = finiteNumber(point?.forward) ?? 0;
+    const lateral = finiteNumber(point?.lateral) ?? 0;
+    const northMeters = forward * Math.cos(headingRad) - lateral * Math.sin(headingRad);
+    const eastMeters = forward * Math.sin(headingRad) + lateral * Math.cos(headingRad);
+    const latRad = originLat * Math.PI / 180;
+    const nextLat = originLat + (northMeters / EARTH_RADIUS_M) * 180 / Math.PI;
+    const nextLon = originLon + (eastMeters / (EARTH_RADIUS_M * Math.max(0.01, Math.cos(latRad)))) * 180 / Math.PI;
+    return new window.kakao.maps.LatLng(nextLat, nextLon);
+  }
+
+  function projectedPathPointToCanvas(point) {
+    if (!shouldUseMapProjection()) return null;
+    try {
+      const latlng = localPointToLatLng(point);
+      const projected = latlng ? state.map.getProjection()?.containerPointFromCoords?.(latlng) : null;
+      if (projected && Number.isFinite(projected.x) && Number.isFinite(projected.y)) {
+        return { x: projected.x, y: projected.y };
+      }
+    } catch (_) {
+      // Projection can be temporarily unavailable while Kakao is relayouting.
+    }
+    return null;
+  }
+
   function pathPointToCanvas(point, cx, cy, pxPerMeter) {
+    const projected = projectedPathPointToCanvas(point);
+    if (projected) return projected;
+
     const headingRad = state.overlayHeadingUp ? 0 : (interp.display.heading || state.heading || 0) * Math.PI / 180;
     const sin = Math.sin(headingRad);
     const cos = Math.cos(headingRad);
@@ -576,6 +615,21 @@
       navState.lastViewRange = viewRange;
       navState.dirty = true;
     }
+    const projectedPath = shouldUseMapProjection();
+    if (projectedPath && navState.active) {
+      const projectionSig = [
+        interp.display.lat.toFixed(6),
+        interp.display.lon.toFixed(6),
+        Math.round(interp.display.heading),
+        state.map?.getLevel?.() ?? "",
+        Math.round(width),
+        Math.round(height),
+      ].join("|");
+      if (projectionSig !== navState.lastProjectionSig) {
+        navState.lastProjectionSig = projectionSig;
+        navState.dirty = true;
+      }
+    }
     if (!navState.dirty && !routeState.dirty && !resized) return;
 
     ctx.save();
@@ -599,7 +653,7 @@
     const pxPerMeter = height / viewRange;
     const maxY = viewRange * 0.66;
     const minY = -viewRange * 0.18;
-    const visible = navState.points.filter((point) => point.forward >= minY && point.forward <= maxY);
+    const visible = projectedPath ? navState.points : navState.points.filter((point) => point.forward >= minY && point.forward <= maxY);
     if (visible.length < 2) {
       ctx.restore();
       navState.dirty = false;
@@ -620,8 +674,8 @@
 
     drawPathColorStroke(ctx, visible, cx, cy, pxPerMeter, width, maxY);
 
-    drawTurnMarker(ctx, cx, cy, pxPerMeter, minY, maxY, width);
-    drawSdiMarker(ctx, cx, cy, pxPerMeter, minY, maxY, width);
+    drawTurnMarker(ctx, cx, cy, pxPerMeter, projectedPath ? -Infinity : minY, projectedPath ? Infinity : maxY, width);
+    drawSdiMarker(ctx, cx, cy, pxPerMeter, projectedPath ? -Infinity : minY, projectedPath ? Infinity : maxY, width);
 
     ctx.restore();
     navState.dirty = false;

@@ -52,10 +52,11 @@ EVENT_NAME = {v: k for k, v in EventName.schema.enumerants.items()}
 
 
 class Events:
-  def __init__(self):
+  def __init__(self, track_counters: bool = True):
     self.events: list[int] = []
     self.static_events: list[int] = []
-    self.event_counters = dict.fromkeys(EVENTS.keys(), 0)
+    self.track_counters = track_counters
+    self.event_counters: dict[int, int] = {}
 
   @property
   def names(self) -> list[int]:
@@ -70,7 +71,15 @@ class Events:
     bisect.insort(self.events, event_name)
 
   def clear(self) -> None:
-    self.event_counters = {k: (v + 1 if k in self.events else 0) for k, v in self.event_counters.items()}
+    if self.track_counters:
+      current_events = set(self.events)
+      for event_name in list(self.event_counters.keys()):
+        if event_name in current_events:
+          self.event_counters[event_name] += 1
+        else:
+          del self.event_counters[event_name]
+      for event_name in current_events:
+        self.event_counters.setdefault(event_name, 1)
     self.events = self.static_events.copy()
 
   def contains(self, event_type: str) -> bool:
@@ -89,7 +98,7 @@ class Events:
           if not isinstance(alert, Alert):
             alert = alert(*callback_args)
 
-          if DT_CTRL * (self.event_counters[e] + 1) >= alert.creation_delay:
+          if DT_CTRL * (self.event_counters.get(e, 0) + 1) >= alert.creation_delay:
             alert.alert_type = f"{EVENT_NAME[e]}/{et}"
             alert.event_type = et
             ret.append(alert)
@@ -98,6 +107,10 @@ class Events:
   def add_from_msg(self, events):
     for e in events:
       bisect.insort(self.events, e.name.raw)
+
+  def add_from_event_names(self, events: list[int]) -> None:
+    for e in events:
+      bisect.insort(self.events, e)
 
   def to_msg(self):
     ret = []

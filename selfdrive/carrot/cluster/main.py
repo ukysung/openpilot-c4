@@ -9,11 +9,13 @@ from pathlib import Path
 from cluster_config import (
     CLUSTER_HUD_PARAM,
     CLUSTER_LIVE_FPS_PARAM,
+    CLUSTER_ROTATION_PARAM,
     CLUSTER_SCREEN_MODE_PARAM,
     CLUSTER_THEME_PARAM,
     DESIGN_HEIGHT,
     DESIGN_WIDTH,
     normalize_cluster_live_fps,
+    normalize_cluster_rotation,
     normalize_cluster_screen_mode,
     normalize_cluster_theme_mode,
 )
@@ -31,6 +33,7 @@ from cluster_usb_pipeline import AsyncJpegUsbPipeline
 DEFAULT_FPS = 0.0
 THEME_PARAM_POLL_SECONDS = 1.0
 FPS_PARAM_POLL_SECONDS = 1.0
+ROTATION_PARAM_POLL_SECONDS = 1.0
 SCREEN_MODE_PARAM_POLL_SECONDS = 1.0
 HUD_MODE_PARAM_POLL_SECONDS = 1.0
 
@@ -71,6 +74,25 @@ class ClusterLiveFpsParamReader:
             return normalize_cluster_live_fps(self._params.get_int(CLUSTER_LIVE_FPS_PARAM))
         except Exception:
             return 0.0
+
+
+class ClusterRotationParamReader:
+    def __init__(self) -> None:
+        self._params = None
+        try:
+            from openpilot.common.params import Params
+
+            self._params = Params()
+        except Exception:
+            pass
+
+    def read(self) -> int:
+        if self._params is None:
+            return 0
+        try:
+            return normalize_cluster_rotation(self._params.get_int(CLUSTER_ROTATION_PARAM))
+        except Exception:
+            return 0
 
 
 class ClusterScreenModeParamReader:
@@ -161,6 +183,8 @@ def run_demo(
         gc.callbacks.append(gc_hook)
     usb_display: TuringUsbDisplay | None = None
     usb_pipeline: AsyncJpegUsbPipeline | None = None
+    rotation_param_reader = ClusterRotationParamReader() if output_mode in ("usb", "both") else None
+    active_usb_rotation = rotation_param_reader.read() if rotation_param_reader is not None else 0
     if output_mode in ("usb", "both"):
         usb_display = TuringUsbDisplay(
             brightness=usb_brightness,
@@ -173,6 +197,7 @@ def run_demo(
             frame_drain_timeout_ms=usb_frame_drain_timeout_ms,
             fast_frame_drain_attempts=usb_fast_drain_attempts,
             fast_frame_drain_timeout_ms=usb_fast_drain_timeout_ms,
+            rotation=active_usb_rotation,
         )
         usb_display.set_profile_enabled(profile_render)
         profile_stage = time.perf_counter()
@@ -222,6 +247,7 @@ def run_demo(
     last_report_time = start_time
     next_theme_param_read = start_time
     next_fps_param_read = start_time + FPS_PARAM_POLL_SECONDS
+    next_rotation_param_read = start_time + ROTATION_PARAM_POLL_SECONDS
     next_screen_mode_param_read = start_time
     next_hud_mode_param_read = start_time + HUD_MODE_PARAM_POLL_SECONDS
     report_frames = 0
@@ -268,6 +294,21 @@ def run_demo(
                     )
                     break
                 next_hud_mode_param_read = now + HUD_MODE_PARAM_POLL_SECONDS
+            if (
+                usb_display is not None
+                and rotation_param_reader is not None
+                and now >= next_rotation_param_read
+            ):
+                next_usb_rotation = rotation_param_reader.read()
+                if next_usb_rotation != active_usb_rotation:
+                    if usb_display.set_rotation(next_usb_rotation):
+                        print(
+                            f"{CLUSTER_ROTATION_PARAM} updated: "
+                            f"{active_usb_rotation} -> {next_usb_rotation}",
+                            flush=True,
+                        )
+                        active_usb_rotation = next_usb_rotation
+                next_rotation_param_read = now + ROTATION_PARAM_POLL_SECONDS
             if live_fps_param_reader is not None and now >= next_fps_param_read:
                 next_target_fps = live_fps_param_reader.read()
                 if next_target_fps != target_fps:

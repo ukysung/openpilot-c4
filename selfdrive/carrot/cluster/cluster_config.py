@@ -50,6 +50,7 @@ CLUSTER_THEME_LIGHT = 2
 CLUSTER_HUD_PARAM = "ClusterHud"
 CLUSTER_THEME_PARAM = "ClusterHudTheme"
 CLUSTER_LIVE_FPS_PARAM = "ClusterHudLiveFps"
+CLUSTER_ROTATION_PARAM = "ClusterHudRotation"
 CLUSTER_SCREEN_MODE_DEFAULT = 0
 CLUSTER_SCREEN_MODE_DEBUG = 1
 CLUSTER_SCREEN_MODE_DEBUG_SYSTEM = 2
@@ -161,6 +162,22 @@ def normalize_cluster_live_fps(value: object) -> float:
     if mode == 3:
         return 30.0
     return 0.0
+
+
+def normalize_cluster_rotation(value: object) -> int:
+    if isinstance(value, str):
+        normalized = value.strip()
+        try:
+            value = int(normalized)
+        except ValueError:
+            return 0
+    try:
+        rotation = int(value)
+    except (TypeError, ValueError):
+        return 0
+    if 0 <= rotation <= 3:
+        return rotation
+    return 0
 
 
 def normalize_cluster_screen_mode(value: object) -> int:

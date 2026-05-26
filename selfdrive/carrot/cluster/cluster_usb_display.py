@@ -7,6 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from cluster_config import normalize_cluster_rotation
 from cluster_utils import clamp
 
 
@@ -93,11 +94,13 @@ class TuringUsbDisplay:
         frame_drain_timeout_ms: int = 2,
         fast_frame_drain_attempts: int = 3,
         fast_frame_drain_timeout_ms: int = 2,
+        rotation: int = 0,
     ) -> None:
         self.brightness = int(clamp(brightness, 0, 100))
         self.display_fps = int(clamp(display_fps, 0, 255))
         self.jpeg_quality = int(clamp(jpeg_quality, 1, 95))
         self.jpeg_encoder = jpeg_encoder
+        self.rotation = normalize_cluster_rotation(rotation)
         self.fast_write = fast_write
         self.wait_for_frame_ack = wait_for_frame_ack
         self.frame_drain_attempts = max(0, int(frame_drain_attempts))
@@ -123,6 +126,7 @@ class TuringUsbDisplay:
         self._turbojpeg = None
         self._turbojpeg_unavailable = False
         self._jpeg_buffer = BytesIO()
+        self._applied_rotation: int | None = None
         self.profile_enabled = os.environ.get("CLUSTER_PROFILE_USB") == "1"
         self._profile_samples: list[tuple[str, float]] = []
 
@@ -189,9 +193,43 @@ class TuringUsbDisplay:
 
         self._send_command(10, "sync")
         time.sleep(USB_COMMAND_GAP_S)
+        self.set_rotation(self.rotation, force=True)
         if self.display_fps > 0:
             self._send_optional_command(15, "frame-rate", {8: self.display_fps})
         self._send_optional_command(14, "brightness", {8: int(self.brightness / 100 * 102)})
+
+    def set_rotation(self, rotation: int, *, force: bool = False) -> bool:
+        next_rotation = normalize_cluster_rotation(rotation)
+        if not force and self._applied_rotation == next_rotation:
+            self.rotation = next_rotation
+            return True
+
+        try:
+            self._send_save_settings_command(next_rotation)
+        except RuntimeError as exc:
+            print(f"Warning: optional TURZX USB rotation command skipped: {exc}")
+            return False
+
+        self.rotation = next_rotation
+        self._applied_rotation = next_rotation
+        return True
+
+    def _send_save_settings_command(self, rotation: int) -> None:
+        brightness = int(self.brightness / 100 * 102)
+        print(f"TURZX rotation setting: {rotation}", flush=True)
+        self._send_command(
+            125,
+            "save-settings",
+            {
+                8: brightness,
+                9: 0,
+                10: 0,
+                11: rotation,
+                12: 0,
+                13: 0,
+            },
+            expect_response=False,
+        )
 
     def _send_command(
         self,

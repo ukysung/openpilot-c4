@@ -37,6 +37,9 @@ When `--fps` is omitted for live input, `ClusterHudLiveFps` controls the render
 limit and is polled about once per second while running: `0` uncapped,
 `1` 10 Hz, `2` 20 Hz, and `3` 30 Hz. Explicit `--fps` remains a fixed
 override.
+`ClusterHudRotation` controls the TURZX panel rotation through command 125
+save-settings and is sent at USB init plus polled about once per second for
+changes: `0` 0 degrees, `2` 180 degrees. Values `1` and `3` are reserved.
 `ClusterHudScreenMode` controls optional debug views: `0` default, `1` shows
 the live debug panel with grouped `LIVE DELAY`, `LIVE TORQUE`, `STEERING`, and
 `LATERAL PLAN` rows, `2` shows the system information panel, `3` shows a large

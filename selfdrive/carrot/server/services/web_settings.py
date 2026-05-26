@@ -12,6 +12,10 @@ DEFAULT_WEB_SETTINGS: Dict[str, Any] = {
   "auto_update_git_pull": False,
   "start_page": "last",
   "web_language": "",
+  "vision_fullscreen_default": True,
+  "kmap_enabled": False,
+  "kmap_url": "https://jominki354.github.io/kmap/",
+  "kmap_debug": False,
 }
 
 
@@ -39,6 +43,11 @@ def _normalize_language(value: Any) -> str:
   return lang if lang in WEB_LANGUAGES else ""
 
 
+def _normalize_kmap_url(value: Any) -> str:
+  url = str(value or "").strip()
+  return url or DEFAULT_WEB_SETTINGS["kmap_url"]
+
+
 def sanitize_web_settings(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
   raw = raw or {}
   settings = dict(DEFAULT_WEB_SETTINGS)
@@ -50,6 +59,10 @@ def sanitize_web_settings(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
   settings["start_page"] = start_page if start_page in WEB_PRIMARY_PAGES else "last"
 
   settings["web_language"] = _normalize_language(raw.get("web_language", settings["web_language"]))
+  settings["vision_fullscreen_default"] = _to_bool(raw.get("vision_fullscreen_default", settings["vision_fullscreen_default"]))
+  settings["kmap_enabled"] = _to_bool(raw.get("kmap_enabled", settings["kmap_enabled"]))
+  settings["kmap_url"] = _normalize_kmap_url(raw.get("kmap_url", settings["kmap_url"]))
+  settings["kmap_debug"] = _to_bool(raw.get("kmap_debug", settings["kmap_debug"]))
   return settings
 
 

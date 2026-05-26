@@ -83,7 +83,7 @@
   <link rel="stylesheet" href="/css/pages/tools/base.css?v=2605-41" />
   <link rel="stylesheet" href="/css/pages/tools/qr.css?v=2605-40" />
   <link rel="stylesheet" href="/css/pages/tools/main.css?v=2605-48" />
-  <link rel="stylesheet" href="/css/pages/drive.css?v=2605-11" />
+  <link rel="stylesheet" href="/css/pages/drive.css?v=2605-13" />
   <link rel="stylesheet" href="/css/responsive.css?v=2605-10" />
   <link rel="stylesheet" href="/css/vendor/plyr.css?v=3.7.8" />
 </head>
@@ -406,6 +406,9 @@
         <canvas id="carrotLastFrameCanvas" class="carrot-stage__videoHold" aria-hidden="true"></canvas>
         <canvas id="carrotOverlayCanvas" class="carrot-stage__canvas"></canvas>
         <canvas id="carrotHudCanvas" class="carrot-stage__hud"></canvas>
+        <div id="carrotMapDock" class="carrot-map-dock" hidden>
+          <iframe id="carrotMapFrame" class="carrot-map-frame" title="Carrot map" loading="lazy" referrerpolicy="no-referrer"></iframe>
+        </div>
         <div id="carrotOnroadAlert" class="carrot-stage__alert" hidden aria-live="polite" aria-atomic="true">
           <div id="carrotOnroadAlertBox" class="carrot-stage__alert-box">
             <div id="carrotOnroadAlertText1" class="carrot-stage__alert-text carrot-stage__alert-text--primary"></div>
@@ -635,7 +638,7 @@
   <script src="/js/pages/setting_device_network.js?v=2605-01"></script>
   <script src="/js/pages/setting_device_actions.js?v=2605-02"></script>
   <script src="/js/pages/setting_device.js?v=2605-09"></script>
-  <script src="/js/pages/tools_web_settings.js?v=2605-04"></script>
+  <script src="/js/pages/tools_web_settings.js?v=2605-05"></script>
   <script src="/js/pages/tools_notifications.js?v=2605-30"></script>
   <script src="/js/pages/tools.js?v=2605-17"></script>
   <script src="/js/pages/tools_settings_qr.js?v=2605-11"></script>
@@ -648,7 +651,8 @@
   <script src="/js/realtime/vision_state.js?v=2605-01"></script>
   <script src="/js/realtime/vision_rtc.js?v=2605-01"></script>
   <script src="/js/realtime/vision_raw.js?v=2605-01"></script>
-  <script src="/js/realtime/app_realtime.js?v=2604-29"></script>
+  <script src="/js/realtime/app_realtime.js?v=2605-01"></script>
+  <script src="/js/realtime/carrot_map.js?v=2605-09"></script>
   <script src="/js/pages/vision_background.js?v=2605-01"></script>
   <script src="/js/realtime/home_drive.js?v=2605-05"></script>
   <script src="/js/app.js?v=2604-76"></script>

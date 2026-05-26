@@ -40,6 +40,30 @@ const WEB_SETTINGS_GROUPS = [
           { value: "terminal", labelKey: "terminal", defaultLabel: "Terminal" },
         ],
       },
+      {
+        id: "vision_fullscreen_default",
+        type: "toggle",
+        titleKey: "web_vision_fullscreen_default",
+        defaultTitle: "Vision fullscreen",
+        descKey: "web_vision_fullscreen_default_desc",
+        defaultDesc: "Automatically enter fullscreen when Carrot Vision starts.",
+      },
+      {
+        id: "kmap_enabled",
+        type: "toggle",
+        titleKey: "web_kmap_enabled",
+        defaultTitle: "Carrot map",
+        descKey: "web_kmap_enabled_desc",
+        defaultDesc: "Show the kmap iframe on the drive vision screen.",
+      },
+      {
+        id: "kmap_debug",
+        type: "toggle",
+        titleKey: "web_kmap_debug",
+        defaultTitle: "Map debug",
+        descKey: "web_kmap_debug_desc",
+        defaultDesc: "Show kmap provider, GPS, and update status inside the map iframe.",
+      },
     ],
   },
 ];
@@ -51,6 +75,10 @@ const WEB_SETTING_DEFAULTS = {
   auto_update_git_pull: false,
   start_page: "last",
   web_language: "",
+  vision_fullscreen_default: true,
+  kmap_enabled: false,
+  kmap_url: "https://jominki354.github.io/kmap/",
+  kmap_debug: false,
 };
 
 const webSettingsState = { ...WEB_SETTING_DEFAULTS };
@@ -75,6 +103,22 @@ function normalizeWebSettingValue(key, value) {
     if (typeof normalizeLangCode === "function") return normalizeLangCode(value);
     const lang = String(value || "").trim().toLowerCase();
     return ["en", "ko", "zh"].includes(lang) ? lang : "";
+  }
+  if (key === "kmap_enabled") {
+    if (typeof value === "string") return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+    return Boolean(value);
+  }
+  if (key === "vision_fullscreen_default") {
+    if (typeof value === "string") return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+    return Boolean(value);
+  }
+  if (key === "kmap_debug") {
+    if (typeof value === "string") return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+    return Boolean(value);
+  }
+  if (key === "kmap_url") {
+    const url = String(value || "").trim();
+    return url || WEB_SETTING_DEFAULTS.kmap_url;
   }
   return value;
 }

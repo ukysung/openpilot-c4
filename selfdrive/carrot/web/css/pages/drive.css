@@ -361,6 +361,54 @@ body[data-page="carrot"] #driveHudCard.driveHudCard--overlay .hudWrap {
   transform-origin: left bottom;
 }
 
+.carrot-map-dock {
+  position: absolute;
+  right: var(--carrot-map-right, 48px);
+  top: 50%;
+  width: var(--carrot-map-width, var(--carrot-map-size, 410px));
+  height: var(--carrot-map-height, var(--carrot-map-size, 460px));
+  transform: translateY(calc(-50% + var(--carrot-map-offset-y, -20px)));
+  z-index: 4;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  border-radius: 8px;
+  background: #e7ebe5;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.40);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.carrot-map-dock.is-visible {
+  opacity: 1;
+}
+
+.carrot-map-dock::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.20), transparent 24%),
+    radial-gradient(circle at 50% 50%, transparent 38%, rgba(255, 255, 255, 0.28));
+}
+
+.carrot-map-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+@media (orientation: portrait) {
+  .carrot-map-dock {
+    display: none !important;
+  }
+}
+
 body[data-page="carrot"] #driveHudCard.driveHudCard--loading {
   opacity: 1;
   visibility: visible;
@@ -531,6 +579,7 @@ body[data-page="carrot"] #driveHudCard.driveHudCard--loading {
   will-change: transform;
   pointer-events: none;
   contain: strict;
+  z-index: 3;
 }
 
 .carrot-stage__hud {

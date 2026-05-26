@@ -1,0 +1,249 @@
+:root {
+  --kmap-bg: rgba(236, 241, 235, .96);
+  --kmap-line: rgba(77, 87, 91, .34);
+  --kmap-road: rgba(78, 88, 92, .38);
+  --kmap-panel-border: rgba(255,255,255,.24);
+  --kmap-text: rgba(15, 19, 24, .80);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: Arial, "Malgun Gothic", sans-serif;
+}
+
+.kmap-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 1px;
+  min-height: 1px;
+  background: transparent;
+}
+
+.kmap-shell {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 1px solid var(--kmap-panel-border);
+  border-radius: 8px;
+  background: var(--kmap-bg);
+  box-shadow: 0 14px 34px rgba(0,0,0,.40);
+}
+
+.kmap-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 1;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.20), transparent 24%),
+    radial-gradient(circle at 50% 50%, transparent 38%, rgba(255,255,255,.28));
+}
+
+.kmap-kakao-map {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity .24s ease;
+}
+
+.kmap-root[data-provider="kakao"] .kmap-kakao-map {
+  opacity: 1;
+  filter: saturate(.94) brightness(1) contrast(.98);
+}
+
+.kmap-surface {
+  position: absolute;
+  inset: -16%;
+  z-index: 2;
+  transform: translate3d(var(--map-pan-x, 0px), var(--map-pan-y, 0px), 0);
+  will-change: transform;
+}
+
+.kmap-root[data-provider="kakao"] .kmap-surface {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kmap-surface::after {
+  content: "";
+  position: absolute;
+  inset: 16%;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.34), transparent 24%),
+    radial-gradient(circle at center, transparent 30%, rgba(255,255,255,.42));
+}
+
+.kmap-road {
+  position: absolute;
+  inset: 0;
+  opacity: .92;
+}
+
+.kmap-road--a {
+  background:
+    linear-gradient(26deg, transparent 47%, var(--kmap-road) 48%, var(--kmap-road) 52%, transparent 53%);
+  background-size: 116px 94px;
+}
+
+.kmap-road--b {
+  background:
+    linear-gradient(91deg, transparent 47%, var(--kmap-road) 48%, var(--kmap-road) 52%, transparent 53%);
+  background-size: 136px 112px;
+}
+
+.kmap-road--c {
+  background:
+    linear-gradient(143deg, transparent 47%, var(--kmap-road) 48%, var(--kmap-road) 52%, transparent 53%);
+  background-size: 164px 140px;
+}
+
+.kmap-center-glow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 177, 74, .12), transparent 70%);
+  pointer-events: none;
+}
+
+.kmap-marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: clamp(36px, 10vw, 54px);
+  height: clamp(44px, 12vw, 66px);
+  transform: translate(-50%, -50%) rotate(var(--heading, 0deg));
+  transform-origin: 50% 50%;
+  pointer-events: none;
+  will-change: transform;
+  z-index: 6;
+}
+
+.kmap-marker::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.58) 0%, rgba(255,255,255,0) 22%),
+    linear-gradient(180deg, #ffb35a 0%, #f56712 50%, #8a2c05 100%);
+  clip-path: polygon(50% 2%, 100% 80%, 66% 66%, 50% 100%, 34% 66%, 0% 80%);
+  filter:
+    drop-shadow(0 0 1.6px rgba(0,0,0,1))
+    drop-shadow(0 0 1.6px rgba(0,0,0,.95))
+    drop-shadow(0 0 1.6px rgba(0,0,0,.85))
+    drop-shadow(0 5px 9px rgba(0,0,0,.60))
+    drop-shadow(0 0 14px rgba(255,130,40,.40));
+}
+
+.kmap-marker::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 78%;
+  width: 26%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 2px rgba(0,0,0,.95),
+    0 0 0 4px rgba(255,255,255,.65),
+    0 0 6px rgba(0,0,0,.55),
+    0 2px 6px rgba(0,0,0,.50);
+}
+
+.kmap-root[data-status="waiting"] .kmap-marker,
+.kmap-root[data-status="invalid"] .kmap-marker {
+  display: none;
+}
+
+/* legacy class kept for backward compatibility; marker now stays inside
+   .kmap-shell for both providers so the map's opacity/filter never dims it */
+
+.kmap-label,
+.kmap-status {
+  position: absolute;
+  z-index: 5;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.kmap-root:not([data-debug="1"]) .kmap-label,
+.kmap-root:not([data-debug="1"]) .kmap-status {
+  display: none;
+}
+
+.kmap-label {
+  display: none;
+  left: 8px;
+  top: 8px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.78);
+  color: var(--kmap-text);
+}
+
+.kmap-status {
+  right: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: rgba(8, 12, 16, .54);
+  color: rgba(255,255,255,.84);
+}
+
+.kmap-demo {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+}
+
+.kmap-root[data-embedded="1"] .kmap-demo {
+  display: none;
+}
+
+.kmap-demo button {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 8px;
+  background: rgba(10, 14, 19, .72);
+  color: rgba(255,255,255,.92);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+@media (max-width: 220px), (max-height: 180px) {
+  .kmap-label,
+  .kmap-status,
+  .kmap-demo {
+    display: none;
+  }
+}

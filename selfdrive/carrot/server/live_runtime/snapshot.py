@@ -450,6 +450,10 @@ def _build_carrot(service: Any, previous: dict[str, Any] | None = None) -> dict[
   p["leftBlindspot"] = safe_bool(safe_get(service, "leftBlindspot"))
   p["rightBlindspot"] = safe_bool(safe_get(service, "rightBlindspot"))
   p["stockDebugTopRightText"] = safe_text(safe_get(service, "stockDebugTopRightText"))
+  p["xPosLat"] = safe_float(safe_get(service, "xPosLat"))
+  p["xPosLon"] = safe_float(safe_get(service, "xPosLon"))
+  p["xPosAngle"] = safe_float(safe_get(service, "xPosAngle"))
+  p["xPosSpeed"] = safe_float(safe_get(service, "xPosSpeed"))
   return p
 
 
@@ -457,6 +461,11 @@ def _build_gps(service: Any, previous: dict[str, Any] | None = None) -> dict[str
   p = previous if isinstance(previous, dict) else {}
   p["latitude"] = safe_float(safe_get(service, "latitude"))
   p["longitude"] = safe_float(safe_get(service, "longitude"))
+  p["speed"] = safe_float(safe_get(service, "speed"))
+  p["bearingDeg"] = safe_float(safe_get(service, "bearingDeg"))
+  p["bearingAccuracyDeg"] = safe_float(safe_get(service, "bearingAccuracyDeg"))
+  p["speedAccuracy"] = safe_float(safe_get(service, "speedAccuracy"))
+  p["hasFix"] = safe_bool(safe_get(service, "hasFix"))
   return p
 
 

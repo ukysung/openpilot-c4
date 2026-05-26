@@ -224,8 +224,8 @@ class SelfdriveD:
 
     # Add car events, ignore if CAN isn't valid
     if CS.canValid:
-      car_events = self.car_events.update(CS, self.CS_prev, self.sm['carControl'])
-      self.events.add_from_event_names(car_events.names)
+      car_events = self.car_events.update(CS, self.CS_prev, self.sm['carControl']).to_msg()
+      self.events.add_from_msg(car_events)
 
       if self.CP.notCar:
         # wait for everything to init first

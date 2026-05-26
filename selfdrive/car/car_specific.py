@@ -60,7 +60,7 @@ class CarSpecificEvents:
     self.frame += 1
     self.update_params()
     if self.CP.brand in ('body', 'mock'):
-      events = Events(track_counters=False)
+      events = Events()
 
     elif self.CP.brand == 'ford':
       events = self.create_common_events(CS, CS_prev, extra_gears=[GearShifter.manumatic])
@@ -186,7 +186,7 @@ class CarSpecificEvents:
 
   def create_common_events(self, CS: structs.CarState, CS_prev: car.CarState, extra_gears=None, pcm_enable=True,
                            allow_enable=True, allow_button_cancel=True):
-    events = Events(track_counters=False)
+    events = Events()
     
     if CS.doorOpen and not self.mute_door:
       events.add(EventName.doorOpen)

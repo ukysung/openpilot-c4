@@ -9,7 +9,7 @@
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-33";
+  const FRAME_VERSION = "2605-34";
   const SEND_INTERVAL_MS = 500;
   const NAV_KEEPALIVE_MS = 1200;
   const IFRAME_TIMEOUT_MS = 15000;
@@ -764,12 +764,12 @@
       }
     }
 
-    debugSnapshot() {
+    debugSnapshot(sendRequest = true) {
       const runtimeState = window.CarrotLiveRuntimeState || {};
       const vehicle = this.buildVehiclePayload();
       const nav = this.buildNavPayload();
       const route = this.buildRoutePayload();
-      this.safePostMessage({ source: "carrot-vision", type: "debug-request" });
+      if (sendRequest) this.safePostMessage({ source: "carrot-vision", type: "debug-request" });
       return {
         ts: Date.now(),
         page: document.body?.dataset?.page || "",
@@ -816,16 +816,17 @@
     }
 
     debugSnapshotAsync(timeoutMs = 1500) {
-      const initial = this.debugSnapshot();
+      const initial = this.debugSnapshot(false);
       if (!this.ready || !this.frame?.contentWindow) return Promise.resolve(initial);
       return new Promise((resolve) => {
         let done = false;
         const finish = (iframeSnapshot) => {
           if (done) return;
           done = true;
-          resolve({ ...this.debugSnapshot(), iframe: iframeSnapshot || this.lastFrameDebug });
+          resolve({ ...this.debugSnapshot(false), iframe: iframeSnapshot || this.lastFrameDebug });
         };
         this.debugWaiters.push(finish);
+        this.safePostMessage({ source: "carrot-vision", type: "debug-request" });
         window.setTimeout(() => finish(this.lastFrameDebug), Math.max(200, Number(timeoutMs) || 1500));
       });
     }

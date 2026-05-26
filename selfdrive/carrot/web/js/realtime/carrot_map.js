@@ -15,7 +15,6 @@
   const LOCATION_MAX_AGE_MS = 5000;
   // Quota guard windows
   const VISION_WARMUP_MS = 3500;           // require N ms of stable vision-active before loading SDK
-  const RELOAD_COOLDOWN_MS = 30 * 60_000;   // do not allow another SDK load for same URL within 30 min
   const DAILY_WARN_THRESHOLD = 12;          // console.warn when this many SDK loads/day on one device
   const DAILY_HARD_CAP = 30;                // circuit breaker: stop loading further today after this count
   const DEV_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
@@ -146,16 +145,6 @@
     }
   }
 
-  function readLastLoad() {
-    try {
-      const raw = window.localStorage?.getItem(SDK_LAST_LOAD_STORAGE);
-      if (!raw) return null;
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-
   function writeLastLoad(record) {
     try {
       window.localStorage?.setItem(SDK_LAST_LOAD_STORAGE, JSON.stringify(record));
@@ -277,18 +266,6 @@
       return true;
     }
 
-    canLoadFreshSdk(url) {
-      if (this.circuitTrippedToday) return false;
-      // Cooldown: if the SAME URL was loaded recently anywhere on this
-      // device, skip a fresh src reset within the cooldown window.
-      const last = readLastLoad();
-      if (last && last.url === url && typeof last.at === "number") {
-        const sinceMs = Date.now() - last.at;
-        if (sinceMs >= 0 && sinceMs < RELOAD_COOLDOWN_MS) return false;
-      }
-      return true;
-    }
-
     handleVisibility() {
       if (document.visibilityState !== "visible") {
         this.cancelWarmup();
@@ -355,15 +332,6 @@
     ensureFrame() {
       const { url, forceMock } = this.settings();
       if (this.frameUrl === url && this.frame.getAttribute("src")) return;
-
-      // Cooldown: skip a fresh src reset (= avoid a new SDK quota count)
-      // if the same URL was loaded on this device recently. Falls through
-      // for mock URLs since mock never hits Kakao.
-      if (!forceMock && !this.canLoadFreshSdk(url)) {
-        this.dock?.setAttribute("data-cooldown", "1");
-        return;
-      }
-      this.dock?.removeAttribute("data-cooldown");
 
       this.ready = false;
       this.loaded = false;

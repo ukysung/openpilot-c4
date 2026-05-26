@@ -3,12 +3,13 @@ import unittest
 import torch
 import numpy as np
 
-from tinygrad.helpers import getenv, CI
+from tinygrad.helpers import DEV
 from tinygrad.tensor import Tensor
 from tinygrad.device import Device
 from tinygrad.dtype import _from_torch_dtype, _to_torch_dtype
+from test.helpers import CI
 
-MOCKGPU = getenv("MOCKGPU")
+MOCKGPU = DEV.interface.startswith("MOCK")
 
 @unittest.skipIf(Device.DEFAULT not in ["METAL", "CUDA"] or MOCKGPU, f"no support on {Device.DEFAULT}")
 class TestInterop(unittest.TestCase):

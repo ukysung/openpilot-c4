@@ -9,7 +9,7 @@
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-32";
+  const FRAME_VERSION = "2605-33";
   const SEND_INTERVAL_MS = 500;
   const NAV_KEEPALIVE_MS = 1200;
   const IFRAME_TIMEOUT_MS = 15000;
@@ -208,6 +208,7 @@
       this.expanded = false;
       this.expandedTimer = 0;
       this.lastFrameDebug = null;
+      this.debugWaiters = [];
       // Quota guards
       this.visionActiveSinceMs = 0;
       this.warmupTimer = 0;
@@ -512,6 +513,8 @@
         this.toggleExpanded();
       } else if (data.type === "debug-snapshot") {
         this.lastFrameDebug = data.snapshot || null;
+        const waiters = this.debugWaiters.splice(0);
+        for (const waiter of waiters) waiter(this.lastFrameDebug);
       }
     }
 
@@ -810,6 +813,21 @@
         },
         iframe: this.lastFrameDebug,
       };
+    }
+
+    debugSnapshotAsync(timeoutMs = 1500) {
+      const initial = this.debugSnapshot();
+      if (!this.ready || !this.frame?.contentWindow) return Promise.resolve(initial);
+      return new Promise((resolve) => {
+        let done = false;
+        const finish = (iframeSnapshot) => {
+          if (done) return;
+          done = true;
+          resolve({ ...this.debugSnapshot(), iframe: iframeSnapshot || this.lastFrameDebug });
+        };
+        this.debugWaiters.push(finish);
+        window.setTimeout(() => finish(this.lastFrameDebug), Math.max(200, Number(timeoutMs) || 1500));
+      });
     }
 
     updateLayout() {

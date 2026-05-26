@@ -48,6 +48,7 @@
     error: "",
     sdkLoadedAt: 0,
     lastDebugPostAt: 0,
+    overlayRaf: 0,
   };
 
   const navState = {
@@ -58,6 +59,8 @@
     turn: null,
     goal: null,
     sdi: null,
+    origin: null,
+    heading: null,
     dirty: true,
     updatedAt: 0,
     staleTimer: 0,
@@ -244,6 +247,8 @@
     navState.turn = null;
     navState.goal = null;
     navState.sdi = null;
+    navState.origin = null;
+    navState.heading = null;
     navState.updatedAt = 0;
     navState.dirty = true;
     updateNavInfo();
@@ -271,6 +276,18 @@
     navState.turn = payload.turn || null;
     navState.goal = payload.goal || null;
     navState.sdi = payload.sdi || null;
+    const originLat = finiteNumber(payload.origin?.lat);
+    const originLon = finiteNumber(payload.origin?.lon);
+    navState.origin = validLatLon(originLat, originLon)
+      ? {
+          lat: originLat,
+          lon: originLon,
+          distanceM: finiteNumber(payload.origin?.distanceM),
+          index: finiteNumber(payload.origin?.index),
+          ratio: finiteNumber(payload.origin?.ratio),
+        }
+      : null;
+    navState.heading = finiteNumber(payload.heading);
     navState.updatedAt = Date.now();
     if (navState.staleTimer) window.clearTimeout(navState.staleTimer);
     navState.staleTimer = window.setTimeout(clearNav, NAV_STALE_MS + 150);
@@ -341,11 +358,12 @@
   }
 
   function localPointToLatLng(point) {
-    const originLat = finiteNumber(interp.display.lat) ?? state.lat;
-    const originLon = finiteNumber(interp.display.lon) ?? state.lon;
+    const originLat = finiteNumber(navState.origin?.lat) ?? finiteNumber(interp.display.lat) ?? state.lat;
+    const originLon = finiteNumber(navState.origin?.lon) ?? finiteNumber(interp.display.lon) ?? state.lon;
     if (!validLatLon(originLat, originLon)) return null;
 
-    const headingRad = (interp.display.heading || state.heading || 0) * Math.PI / 180;
+    const heading = finiteNumber(navState.heading) ?? finiteNumber(interp.display.heading) ?? state.heading ?? 0;
+    const headingRad = heading * Math.PI / 180;
     const forward = finiteNumber(point?.forward) ?? 0;
     const lateral = finiteNumber(point?.lateral) ?? 0;
     const northMeters = forward * Math.cos(headingRad) - lateral * Math.sin(headingRad);
@@ -434,6 +452,8 @@
         points: points.length,
         pathLength: navState.path.length,
         updatedAgeMs: navState.updatedAt ? Date.now() - navState.updatedAt : null,
+        origin: navState.origin,
+        heading: navState.heading,
         road: navState.road,
         turn: navState.turn,
         goal: navState.goal,
@@ -462,15 +482,38 @@
     state.lastDebugPostAt = now;
     try {
       if (window.parent && window.parent !== window) {
+        let snapshot = null;
+        try {
+          snapshot = buildDebugSnapshot(reason);
+        } catch (error) {
+          snapshot = {
+            reason,
+            ts: Date.now(),
+            provider: state.provider,
+            status: state.status,
+            error: error?.message || "debug_snapshot_failed",
+          };
+        }
         window.parent.postMessage({
           source: "carrot-kmap",
           type: "debug-snapshot",
-          snapshot: buildDebugSnapshot(reason),
+          snapshot,
         }, "*");
       }
     } catch (_) {
       // Standalone file preview can ignore parent messaging failures.
     }
+  }
+
+  function requestOverlayRender(reason = "") {
+    navState.dirty = true;
+    routeState.dirty = true;
+    if (state.overlayRaf) return;
+    state.overlayRaf = window.requestAnimationFrame(() => {
+      state.overlayRaf = 0;
+      renderOverlay();
+      postDebugSnapshot(reason);
+    });
   }
 
   function pathPointToCanvas(point, cx, cy, pxPerMeter) {
@@ -722,6 +765,9 @@
     const projectedPath = shouldUseMapProjection();
     if (projectedPath && navState.active) {
       const projectionSig = [
+        navState.origin ? navState.origin.lat.toFixed(6) : "",
+        navState.origin ? navState.origin.lon.toFixed(6) : "",
+        Number.isFinite(navState.heading) ? Math.round(navState.heading) : "",
         interp.display.lat.toFixed(6),
         interp.display.lon.toFixed(6),
         Math.round(interp.display.heading),
@@ -791,9 +837,11 @@
       window.kakao.maps.event.trigger(state.map, "resize");
       if (routeState.expanded && routeState.active) {
         fitRouteView();
+        requestOverlayRender("relayout-route");
         return;
       }
       state.map.setCenter(new window.kakao.maps.LatLng(state.lat, state.lon));
+      requestOverlayRender("relayout");
     } catch (_) {
       // Resize events can race while the iframe is still settling.
     }
@@ -916,6 +964,7 @@
     const position = new window.kakao.maps.LatLng(lat, lon);
     state.map.setCenter(position);
     setKakaoLevel(position, forceLevel);
+    requestOverlayRender("position");
   }
 
   function renderDisplay() {
@@ -1029,6 +1078,13 @@
     if (state.map.setCopyrightPosition && window.kakao.maps.CopyrightPosition) {
       state.map.setCopyrightPosition(window.kakao.maps.CopyrightPosition.BOTTOMRIGHT, true);
     }
+    for (const eventName of ["center_changed", "zoom_changed", "bounds_changed", "idle"]) {
+      try {
+        window.kakao.maps.event.addListener(state.map, eventName, () => requestOverlayRender(eventName));
+      } catch (_) {
+        // Older SDK surfaces can ignore optional event hooks.
+      }
+    }
 
     // Marker stays as a shell-positioned div (#vehicleMarker) instead of a
     // Kakao CustomOverlay child of the map. This keeps the marker outside
@@ -1123,6 +1179,7 @@
           // sdkLoadedAt is only non-zero when the Kakao SDK actually executed
           // (= 1 quota count). Parent uses this to track daily SDK load count.
           sdkLoadedAt: state.provider === "kakao" ? state.sdkLoadedAt || Date.now() : 0,
+          snapshot: buildDebugSnapshot("ready"),
         }, "*");
       }
     } catch (_) {
@@ -1155,6 +1212,7 @@
           provider: state.provider,
           error,
           fallback: options.soft ? "mock" : "",
+          snapshot: buildDebugSnapshot(options.soft ? "fallback" : "error"),
         }, "*");
       }
     } catch (_) {
@@ -1214,6 +1272,11 @@
     updateStatus();
     postReady();
   }
+
+  window.KmapDebug = {
+    snapshot: buildDebugSnapshot,
+    post: () => postDebugSnapshot("manual", true),
+  };
 
   init();
 })();

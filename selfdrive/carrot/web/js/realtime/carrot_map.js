@@ -9,7 +9,7 @@
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-34";
+  const FRAME_VERSION = "2605-35";
   const SEND_INTERVAL_MS = 500;
   const NAV_KEEPALIVE_MS = 1200;
   const IFRAME_TIMEOUT_MS = 15000;
@@ -63,6 +63,10 @@
 
   function validLatLon(lat, lon) {
     return lat !== null && lon !== null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && !(lat === 0 && lon === 0);
+  }
+
+  function metersPerDegreeLon(lat) {
+    return 111320 * Math.max(0.01, Math.cos((lat || 0) * Math.PI / 180));
   }
 
   function normalizeHeading(value, fallback = 0) {
@@ -492,6 +496,7 @@
       const data = event.data || {};
       if (data.source !== "carrot-kmap") return;
       if (data.type === "ready") {
+        if (data.snapshot) this.lastFrameDebug = data.snapshot;
         this.failed = false;
         this.ready = true;
         this.loaded = true;
@@ -573,6 +578,8 @@
         type: "nav",
         active: false,
         path: "",
+        heading: this.lastHeading,
+        origin: null,
         turn: null,
         goal: null,
         sdi: null,
@@ -582,7 +589,58 @@
       };
     }
 
-    buildNavPayload() {
+    readRouteCoordinates(runtimeState = window.CarrotLiveRuntimeState, maxPoints = 900) {
+      if (!runtimeState?.ok) return [];
+      const navRoute = runtimeState.services?.navRoute || {};
+      return this.normalizeRouteCoordinates(navRoute.coordinates || [], maxPoints);
+    }
+
+    closestRouteOrigin(coordinates, location) {
+      if (!Array.isArray(coordinates) || coordinates.length < 2 || !location) return null;
+      const lat0 = finiteNumber(location.lat);
+      const lon0 = finiteNumber(location.lon);
+      if (!validLatLon(lat0, lon0)) return null;
+
+      const lonScale = metersPerDegreeLon(lat0);
+      const latScale = 111320;
+      let best = null;
+      for (let index = 0; index < coordinates.length - 1; index += 1) {
+        const a = coordinates[index];
+        const b = coordinates[index + 1];
+        const ax = (a.lon - lon0) * lonScale;
+        const ay = (a.lat - lat0) * latScale;
+        const bx = (b.lon - lon0) * lonScale;
+        const by = (b.lat - lat0) * latScale;
+        const dx = bx - ax;
+        const dy = by - ay;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq <= 0.0001) continue;
+        const ratio = clamp(-(ax * dx + ay * dy) / lenSq, 0, 1);
+        const px = ax + dx * ratio;
+        const py = ay + dy * ratio;
+        const distSq = px * px + py * py;
+        if (!best || distSq < best.distSq) {
+          best = {
+            lat: lat0 + py / latScale,
+            lon: lon0 + px / lonScale,
+            distanceM: Math.sqrt(distSq),
+            index,
+            ratio,
+            distSq,
+          };
+        }
+      }
+      if (!best || best.distanceM > 100) return null;
+      return {
+        lat: best.lat,
+        lon: best.lon,
+        distanceM: Math.round(best.distanceM * 10) / 10,
+        index: best.index,
+        ratio: Math.round(best.ratio * 1000) / 1000,
+      };
+    }
+
+    buildNavPayload(location = null) {
       const runtimeState = window.CarrotLiveRuntimeState;
       if (!runtimeState?.ok) return this.buildNavClearPayload("runtime");
 
@@ -599,12 +657,16 @@
       const sdiDist = finiteNumber(carrotMan.xSpdDist) ?? 0;
       const goalDist = finiteNumber(carrotMan.nGoPosDist) ?? 0;
       const active = activeCarrot > 1 || path.length > 0 || turnDist > 0 || sdiDist > 0 || goalDist > 0;
+      const routeCoordinates = this.readRouteCoordinates(runtimeState, 2500);
+      const origin = this.closestRouteOrigin(routeCoordinates, location);
 
       return {
         source: "carrot-vision",
         type: "nav",
         active,
         path,
+        heading: finiteNumber(location?.heading) ?? normalizeHeading(carrotMan.xPosAngle, this.lastHeading),
+        origin,
         turn: {
           info: turnInfo,
           dist: turnDist,
@@ -645,6 +707,8 @@
         payload.sdi?.text ?? "",
         payload.road ?? "",
         payload.clearReason ?? "",
+        finiteNumber(payload.origin?.lat)?.toFixed(6) ?? "",
+        finiteNumber(payload.origin?.lon)?.toFixed(6) ?? "",
       ].join("|");
       if (sig === this.lastNavPayloadSig && now - this.lastNavPayloadSentAt < NAV_KEEPALIVE_MS) return;
       this.lastNavPayloadSig = sig;
@@ -652,7 +716,7 @@
       this.safePostMessage(payload);
     }
 
-    normalizeRouteCoordinates(coordinates) {
+    normalizeRouteCoordinates(coordinates, maxPoints = 900) {
       if (!Array.isArray(coordinates) || coordinates.length < 2) return [];
       const clean = [];
       for (const point of coordinates) {
@@ -661,8 +725,9 @@
         if (!validLatLon(lat, lon)) continue;
         clean.push({ lat, lon });
       }
-      if (clean.length <= 900) return clean;
-      const stride = Math.ceil(clean.length / 900);
+      const limit = Math.max(2, Number(maxPoints) || 900);
+      if (clean.length <= limit) return clean;
+      const stride = Math.ceil(clean.length / limit);
       const sampled = clean.filter((_, index) => index % stride === 0);
       const last = clean[clean.length - 1];
       const sampledLast = sampled[sampled.length - 1];
@@ -677,7 +742,7 @@
       const fetchedAtMs = finiteNumber(runtimeState.fetchedAtMs) || Date.now();
       if (Date.now() - fetchedAtMs > LOCATION_MAX_AGE_MS) return empty;
       const navRoute = runtimeState.services?.navRoute || {};
-      const coordinates = this.normalizeRouteCoordinates(navRoute.coordinates || []);
+      const coordinates = this.readRouteCoordinates(runtimeState);
       return {
         source: "carrot-vision",
         type: "route",
@@ -718,7 +783,7 @@
       if (!this.frame?.contentWindow) return;
       if (!this.ready) return;
       const payload = this.buildVehiclePayload();
-      const navPayload = this.buildNavPayload();
+      const navPayload = this.buildNavPayload(payload);
       const routePayload = this.buildRoutePayload();
       if (!payload) {
         this.sendNavPayload(navPayload);
@@ -767,7 +832,7 @@
     debugSnapshot(sendRequest = true) {
       const runtimeState = window.CarrotLiveRuntimeState || {};
       const vehicle = this.buildVehiclePayload();
-      const nav = this.buildNavPayload();
+      const nav = this.buildNavPayload(vehicle);
       const route = this.buildRoutePayload();
       if (sendRequest) this.safePostMessage({ source: "carrot-vision", type: "debug-request" });
       return {
@@ -802,6 +867,8 @@
             turn: nav.turn,
             goal: nav.goal,
             sdi: nav.sdi,
+            heading: nav.heading,
+            origin: nav.origin,
             road: nav.road,
             clearReason: nav.clearReason,
           } : null,

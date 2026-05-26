@@ -64,6 +64,24 @@ body {
   filter: saturate(.94) brightness(1) contrast(.98);
 }
 
+.kmap-root[data-mode="mini"] .kmap-shell {
+  border-color: rgba(255,255,255,.14);
+  background: transparent;
+  box-shadow: 0 10px 26px rgba(0,0,0,.28);
+}
+
+.kmap-root[data-mode="mini"] .kmap-kakao-map,
+.kmap-root[data-mode="mini"] .kmap-surface,
+.kmap-root[data-mode="mini"] .kmap-overlay {
+  -webkit-mask-image: radial-gradient(circle at center, #000 62%, rgba(0,0,0,.78) 74%, transparent 100%);
+  mask-image: radial-gradient(circle at center, #000 62%, rgba(0,0,0,.78) 74%, transparent 100%);
+}
+
+.kmap-root[data-mode="schematic"] .kmap-shell {
+  border-color: rgba(255,255,255,.16);
+  background: rgba(15, 20, 25, .86);
+}
+
 .kmap-surface {
   position: absolute;
   inset: -16%;

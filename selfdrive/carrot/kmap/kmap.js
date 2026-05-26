@@ -9,6 +9,7 @@
   const INTERP_MAX_MS = 1800;
   const INTERP_MIN_MS = 350;
   const NAV_STALE_MS = 5000;
+  const KMAP_MODES = new Set(["box", "mini", "schematic"]);
 
   const root = document.getElementById("kmapRoot");
   const kakaoMapEl = document.getElementById("kakaoMap");
@@ -31,6 +32,7 @@
     level: 4,
     lastTs: 0,
     provider: "mock",
+    mode: "box",
     kakaoReady: false,
     map: null,
     markerOverlay: null,
@@ -637,17 +639,18 @@
   }
 
   function setMode(mode) {
-    root.dataset.mode = "box";
+    state.mode = KMAP_MODES.has(mode) ? mode : "box";
+    root.dataset.mode = state.mode;
   }
 
   function setProvider(provider) {
-    state.provider = provider === "kakao" ? "kakao" : "mock";
+    state.provider = provider === "kakao" || provider === "schematic" ? provider : "mock";
     root.dataset.provider = state.provider;
   }
 
   function updateStatus() {
     if (!statusText) return;
-    const label = state.provider === "kakao" ? "kakao" : "mock";
+    const label = state.provider;
     const age = state.lastTs ? Math.max(0, Math.round((Date.now() - state.lastTs) / 1000)) : 0;
     const parts = [
       label,
@@ -818,6 +821,12 @@
 
   async function initProvider() {
     const params = new URLSearchParams(window.location.search);
+    if (params.get("provider") === "schematic" || params.get("mode") === "schematic") {
+      setMode("schematic");
+      setProvider("schematic");
+      return;
+    }
+
     if (params.get("mock") === "1") {
       setProvider("mock");
       return;
@@ -856,7 +865,7 @@
     state.heading = normalizeHeading(payload.heading);
     state.speed = speed === null ? state.speed : Math.max(0, speed);
     state.lastTs = finiteNumber(payload.ts) || Date.now();
-    setMode("box");
+    setMode(state.mode);
     state.level = levelForSpeed(state.speed);
     applyMotionState();
 

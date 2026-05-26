@@ -9,7 +9,7 @@
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-27";
+  const FRAME_VERSION = "2605-28";
   const SEND_INTERVAL_MS = 500;
   const NAV_KEEPALIVE_MS = 1200;
   const IFRAME_TIMEOUT_MS = 15000;
@@ -80,21 +80,32 @@
     }
   }
 
+  function normalizeDisplayMode(value) {
+    const mode = String(value || "").trim().toLowerCase();
+    return ["box", "mini", "schematic"].includes(mode) ? mode : "box";
+  }
+
   function buildFrameUrl(url, options = {}) {
     try {
       const parsed = new URL(url, window.location.href);
+      const mode = normalizeDisplayMode(options.mode);
       parsed.searchParams.set("cv", FRAME_VERSION);
       parsed.searchParams.set("demo", "0");
-      parsed.searchParams.set("mode", "box");
+      parsed.searchParams.set("mode", mode);
       if (options.debug) {
         parsed.searchParams.set("debug", "1");
       } else {
         parsed.searchParams.delete("debug");
       }
-      if (options.forceMock) {
+      if (mode === "schematic") {
+        parsed.searchParams.set("provider", "schematic");
+        parsed.searchParams.delete("mock");
+      } else if (options.forceMock) {
         parsed.searchParams.set("mock", "1");
+        parsed.searchParams.delete("provider");
       } else {
         parsed.searchParams.delete("mock");
+        parsed.searchParams.delete("provider");
       }
       return parsed.toString();
     } catch {
@@ -258,13 +269,14 @@
     settings() {
       const enabled = normalizeBool(getSetting("kmap_enabled", false));
       const rawUrl = String(getSetting("kmap_url", DEFAULT_KMAP_URL) || DEFAULT_KMAP_URL).trim();
+      const mode = normalizeDisplayMode(getSetting("kmap_display_mode", "box"));
       const debug = normalizeBool(getSetting("kmap_debug", false));
       const baseUrl = rawUrl || DEFAULT_KMAP_URL;
       // Strong quota guards: development hosts and the daily circuit breaker
       // force the iframe into mock mode so Kakao SDK is never loaded.
-      const forceMock = isDevHost() || this.circuitTrippedToday;
-      const url = buildFrameUrl(baseUrl, { debug, forceMock });
-      return { enabled, url, debug, forceMock };
+      const forceMock = mode !== "schematic" && (isDevHost() || this.circuitTrippedToday);
+      const url = buildFrameUrl(baseUrl, { debug, forceMock, mode });
+      return { enabled, url, debug, forceMock, mode };
     }
 
     shouldRun() {
@@ -782,7 +794,7 @@
         finalOffsetY = 0;
       }
 
-      this.dock.dataset.mode = "box";
+      this.dock.dataset.mode = this.settings().mode || "box";
       this.dock.style.setProperty("--carrot-map-right", `${finalRight}px`);
       this.dock.style.setProperty("--carrot-map-size", `${finalWidth}px`);
       this.dock.style.setProperty("--carrot-map-width", `${finalWidth}px`);

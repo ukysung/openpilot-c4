@@ -57,6 +57,19 @@ const WEB_SETTINGS_GROUPS = [
         defaultDesc: "Show the kmap iframe on the drive vision screen.",
       },
       {
+        id: "kmap_display_mode",
+        type: "select",
+        titleKey: "web_kmap_display_mode",
+        defaultTitle: "Map mode",
+        descKey: "web_kmap_display_mode_desc",
+        defaultDesc: "Choose Kakao box, minimal mini, or offline schematic mode.",
+        options: [
+          { value: "box", labelKey: "web_kmap_mode_box", defaultLabel: "Kakao box" },
+          { value: "mini", labelKey: "web_kmap_mode_mini", defaultLabel: "Mini" },
+          { value: "schematic", labelKey: "web_kmap_mode_schematic", defaultLabel: "Schematic" },
+        ],
+      },
+      {
         id: "kmap_debug",
         type: "toggle",
         titleKey: "web_kmap_debug",
@@ -78,6 +91,7 @@ const WEB_SETTING_DEFAULTS = {
   vision_fullscreen_default: true,
   kmap_enabled: false,
   kmap_url: "https://jominki354.github.io/kmap/",
+  kmap_display_mode: "box",
   kmap_debug: false,
 };
 
@@ -119,6 +133,10 @@ function normalizeWebSettingValue(key, value) {
   if (key === "kmap_url") {
     const url = String(value || "").trim();
     return url || WEB_SETTING_DEFAULTS.kmap_url;
+  }
+  if (key === "kmap_display_mode") {
+    const mode = String(value || "").trim().toLowerCase();
+    return ["box", "mini", "schematic"].includes(mode) ? mode : WEB_SETTING_DEFAULTS.kmap_display_mode;
   }
   return value;
 }

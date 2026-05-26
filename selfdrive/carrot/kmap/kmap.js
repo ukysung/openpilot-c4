@@ -331,6 +331,74 @@
     };
   }
 
+  function pathDistance(point) {
+    const distance = finiteNumber(point?.d);
+    return distance === null ? finiteNumber(point?.forward) ?? 0 : distance;
+  }
+
+  function pointAlongPath(points, targetDistance) {
+    const target = finiteNumber(targetDistance);
+    if (!Array.isArray(points) || points.length === 0 || target === null || target < 0) return null;
+    let previous = points[0];
+    let previousDistance = pathDistance(previous);
+    if (target <= previousDistance) return previous;
+    for (let index = 1; index < points.length; index += 1) {
+      const current = points[index];
+      const currentDistance = pathDistance(current);
+      if (target <= currentDistance) {
+        const span = Math.max(0.001, currentDistance - previousDistance);
+        const ratio = Math.max(0, Math.min(1, (target - previousDistance) / span));
+        return {
+          forward: previous.forward + (current.forward - previous.forward) * ratio,
+          lateral: previous.lateral + (current.lateral - previous.lateral) * ratio,
+          d: target,
+        };
+      }
+      previous = current;
+      previousDistance = currentDistance;
+    }
+    return points[points.length - 1];
+  }
+
+  function drawTurnMarker(ctx, cx, cy, pxPerMeter, minY, maxY, width) {
+    const turnDistance = finiteNumber(navState.turn?.dist);
+    if (turnDistance === null || turnDistance <= 0 || !navState.points.length) return;
+    const point = pointAlongPath(navState.points, turnDistance);
+    if (!point || point.forward < minY || point.forward > maxY) return;
+
+    const before = pointAlongPath(navState.points, Math.max(0, turnDistance - 10)) || point;
+    const after = pointAlongPath(navState.points, turnDistance + 10) || point;
+    const canvasPoint = pathPointToCanvas(point, cx, cy, pxPerMeter);
+    const beforePoint = pathPointToCanvas(before, cx, cy, pxPerMeter);
+    const afterPoint = pathPointToCanvas(after, cx, cy, pxPerMeter);
+    const angle = Math.atan2(afterPoint.y - beforePoint.y, afterPoint.x - beforePoint.x) + Math.PI / 2;
+    const radius = Math.max(11, Math.min(18, width * 0.038));
+
+    ctx.save();
+    ctx.translate(canvasPoint.x, canvasPoint.y);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.9, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(9, 12, 16, .62)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, -radius);
+    ctx.lineTo(radius * 0.72, radius * 0.76);
+    ctx.lineTo(0, radius * 0.42);
+    ctx.lineTo(-radius * 0.72, radius * 0.76);
+    ctx.closePath();
+    ctx.strokeStyle = "rgba(0, 0, 0, .55)";
+    ctx.lineWidth = Math.max(2, radius * 0.18);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255, 125, 32, .96)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, radius * 0.18, Math.max(2.2, radius * 0.17), 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,.82)";
+    ctx.fill();
+    ctx.restore();
+  }
+
   function fitRouteView() {
     if (!routeState.expanded || !routeState.active || !routeState.bounds || !state.map || !window.kakao?.maps) return;
     try {
@@ -463,6 +531,8 @@
     ctx.strokeStyle = gradient;
     ctx.lineWidth = Math.max(4, Math.min(8, width * 0.016));
     ctx.stroke();
+
+    drawTurnMarker(ctx, cx, cy, pxPerMeter, minY, maxY, width);
 
     ctx.restore();
     navState.dirty = false;

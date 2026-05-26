@@ -9,10 +9,11 @@
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-20";
+  const FRAME_VERSION = "2605-21";
   const SEND_INTERVAL_MS = 500;
   const IFRAME_TIMEOUT_MS = 15000;
   const LOCATION_MAX_AGE_MS = 5000;
+  const EXPANDED_AUTO_HIDE_MS = 8000;
   // Quota guard windows
   const VISION_WARMUP_MS = 3500;           // require N ms of stable vision-active before loading SDK
   const RETRY_AFTER_MS = 15000;            // recover from transient iframe/network stalls
@@ -191,6 +192,8 @@
       this.lastEnabled = false;
       this.resizeObserver = null;
       this.layoutRaf = 0;
+      this.expanded = false;
+      this.expandedTimer = 0;
       // Quota guards
       this.visionActiveSinceMs = 0;
       this.warmupTimer = 0;
@@ -224,6 +227,9 @@
       window.addEventListener("carrot:websettingschange", this.sync);
       window.addEventListener("carrot:render-request", this.tick);
       document.addEventListener("visibilitychange", this.handleVisibility);
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") this.setExpanded(false);
+      });
       const stage = document.getElementById("carrotStage");
       if (stage && typeof ResizeObserver === "function") {
         this.resizeObserver = new ResizeObserver(this.requestLayout);
@@ -413,6 +419,7 @@
 
     hide() {
       if (!this.dock) return;
+      this.setExpanded(false);
       this.dock.hidden = true;
       this.dock.classList.remove("is-visible");
     }
@@ -421,6 +428,28 @@
       if (!this.dock) return;
       this.dock.hidden = false;
       this.dock.classList.add("is-visible");
+    }
+
+    setExpanded(expanded) {
+      const next = Boolean(expanded);
+      if (this.expandedTimer) {
+        window.clearTimeout(this.expandedTimer);
+        this.expandedTimer = 0;
+      }
+      this.expanded = next;
+      this.dock?.classList.toggle("is-expanded", next);
+      this.updateLayout();
+      if (next) {
+        this.expandedTimer = window.setTimeout(() => {
+          this.expandedTimer = 0;
+          this.setExpanded(false);
+        }, EXPANDED_AUTO_HIDE_MS);
+      }
+    }
+
+    toggleExpanded() {
+      if (!this.shouldRun() || !this.ready) return;
+      this.setExpanded(!this.expanded);
     }
 
     handleMessage(event) {
@@ -443,6 +472,8 @@
         this.tick();
       } else if (data.type === "error") {
         this.fail(data.error || "iframe_error");
+      } else if (data.type === "toggle-expanded") {
+        this.toggleExpanded();
       }
     }
 
@@ -635,13 +666,29 @@
       const width = Math.round(Math.max(140, Math.min(widthByStage, widthByHeight)));
       const height = Math.round(Math.min(heightByStage, width * aspect));
       const offsetY = 0;
+      let finalRight = right;
+      let finalWidth = width;
+      let finalHeight = height;
+      let finalOffsetY = offsetY;
+
+      if (this.expanded) {
+        const margin = Math.round(clamp(Math.min(stageWidth, stageHeight) * 0.045, 18, 46));
+        const expandedMaxWidth = stageWidth - margin * 2;
+        const expandedMaxHeight = stageHeight - margin * 2;
+        const expandedHeight = Math.round(clamp(stageHeight * 0.84, 320, expandedMaxHeight));
+        const expandedWidth = Math.round(Math.min(expandedMaxWidth, Math.max(width * 1.45, expandedHeight * 1.22)));
+        finalRight = margin;
+        finalWidth = expandedWidth;
+        finalHeight = Math.min(expandedMaxHeight, expandedHeight);
+        finalOffsetY = 0;
+      }
 
       this.dock.dataset.mode = "box";
-      this.dock.style.setProperty("--carrot-map-right", `${right}px`);
-      this.dock.style.setProperty("--carrot-map-size", `${width}px`);
-      this.dock.style.setProperty("--carrot-map-width", `${width}px`);
-      this.dock.style.setProperty("--carrot-map-height", `${height}px`);
-      this.dock.style.setProperty("--carrot-map-offset-y", `${offsetY}px`);
+      this.dock.style.setProperty("--carrot-map-right", `${finalRight}px`);
+      this.dock.style.setProperty("--carrot-map-size", `${finalWidth}px`);
+      this.dock.style.setProperty("--carrot-map-width", `${finalWidth}px`);
+      this.dock.style.setProperty("--carrot-map-height", `${finalHeight}px`);
+      this.dock.style.setProperty("--carrot-map-offset-y", `${finalOffsetY}px`);
     }
   }
 

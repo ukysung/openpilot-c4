@@ -567,6 +567,19 @@
     }
   }
 
+  function postToggleExpanded() {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          source: "carrot-kmap",
+          type: "toggle-expanded",
+        }, "*");
+      }
+    } catch (_) {
+      // Standalone file preview can ignore parent messaging failures.
+    }
+  }
+
   function postError(error, options = {}) {
     state.error = error || "";
     state.status = options.soft ? "fallback" : "error";
@@ -617,6 +630,10 @@
 
   async function init() {
     window.addEventListener("message", handleMessage);
+    root.addEventListener("click", (event) => {
+      if (event.target?.closest?.("button")) return;
+      postToggleExpanded();
+    }, true);
     initDemoControls();
     state.status = "waiting";
     root.dataset.status = "waiting";

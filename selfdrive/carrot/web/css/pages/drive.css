@@ -376,11 +376,27 @@ body[data-page="carrot"] #driveHudCard.driveHudCard--overlay .hudWrap {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.40);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    width 0.22s ease,
+    height 0.22s ease,
+    right 0.22s ease,
+    transform 0.22s ease,
+    box-shadow 0.22s ease;
 }
 
 .carrot-map-dock.is-visible {
   opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.carrot-map-dock.is-expanded {
+  z-index: 45;
+  border-color: rgba(255, 255, 255, 0.30);
+  box-shadow:
+    0 26px 72px rgba(0, 0, 0, 0.56),
+    0 0 0 1px rgba(255, 255, 255, 0.10);
 }
 
 .carrot-map-dock::after {

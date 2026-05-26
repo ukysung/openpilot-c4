@@ -9,7 +9,7 @@
   //     kmap.js) actually change in user-visible ways. Changes inside
   //     this bridge file (carrot_map.js) do NOT require a bump.
   //   - Try to batch multiple iframe-side changes into one bump per week.
-  const FRAME_VERSION = "2605-16";
+  const FRAME_VERSION = "2605-17";
   const SEND_INTERVAL_MS = 500;
   const IFRAME_TIMEOUT_MS = 15000;
   const LOCATION_MAX_AGE_MS = 5000;
@@ -187,6 +187,7 @@
       this.lastSendAt = 0;
       this.lastHeading = 0;
       this.lastPayloadSig = "";
+      this.lastNavPayloadSig = "";
       this.lastEnabled = false;
       this.resizeObserver = null;
       this.layoutRaf = 0;
@@ -484,7 +485,7 @@
       };
     }
 
-    buildPayload() {
+    buildVehiclePayload() {
       const location = this.readLocation();
       if (!location) return null;
       return {
@@ -494,6 +495,72 @@
       };
     }
 
+    buildNavPayload() {
+      const runtimeState = window.CarrotLiveRuntimeState;
+      if (!runtimeState?.ok) return null;
+
+      const services = runtimeState.services || {};
+      const carrotMan = services.carrotMan || {};
+      const fetchedAtMs = finiteNumber(runtimeState.fetchedAtMs) || Date.now();
+      if (Date.now() - fetchedAtMs > LOCATION_MAX_AGE_MS) return null;
+
+      const path = String(carrotMan.naviPaths || "").trim();
+      const activeCarrot = finiteNumber(carrotMan.activeCarrot) ?? 0;
+      const turnInfo = finiteNumber(carrotMan.xTurnInfo) ?? -1;
+      const turnDist = finiteNumber(carrotMan.xDistToTurn) ?? 0;
+      const sdiType = finiteNumber(carrotMan.xSpdType) ?? -1;
+      const sdiDist = finiteNumber(carrotMan.xSpdDist) ?? 0;
+      const goalDist = finiteNumber(carrotMan.nGoPosDist) ?? 0;
+      const active = activeCarrot > 1 || path.length > 0 || turnDist > 0 || sdiDist > 0 || goalDist > 0;
+
+      return {
+        source: "carrot-vision",
+        type: "nav",
+        active,
+        path,
+        turn: {
+          info: turnInfo,
+          dist: turnDist,
+          countdown: finiteNumber(carrotMan.xTurnCountDown) ?? 0,
+          text: String(carrotMan.szTBTMainText || ""),
+        },
+        goal: {
+          dist: goalDist,
+          timeSec: finiteNumber(carrotMan.nGoPosTime) ?? 0,
+        },
+        sdi: {
+          type: sdiType,
+          limit: finiteNumber(carrotMan.xSpdLimit) ?? 0,
+          dist: sdiDist,
+          countdown: finiteNumber(carrotMan.xSpdCountDown) ?? 0,
+          text: String(carrotMan.szSdiDescr || ""),
+        },
+        road: String(carrotMan.szPosRoadName || ""),
+        ts: fetchedAtMs,
+      };
+    }
+
+    sendNavPayload(payload) {
+      if (!payload || !this.frame?.contentWindow) return;
+      const sig = [
+        payload.active ? "1" : "0",
+        payload.path,
+        payload.turn?.info ?? "",
+        payload.turn?.dist ?? "",
+        payload.turn?.text ?? "",
+        payload.goal?.dist ?? "",
+        payload.goal?.timeSec ?? "",
+        payload.sdi?.type ?? "",
+        payload.sdi?.limit ?? "",
+        payload.sdi?.dist ?? "",
+        payload.sdi?.text ?? "",
+        payload.road ?? "",
+      ].join("|");
+      if (sig === this.lastNavPayloadSig) return;
+      this.lastNavPayloadSig = sig;
+      this.frame.contentWindow.postMessage(payload, this.targetOrigin);
+    }
+
     tick() {
       if (!this.shouldRun()) {
         this.sync();
@@ -501,23 +568,32 @@
       }
       if (!this.frame?.contentWindow) return;
       if (!this.ready) return;
-      const payload = this.buildPayload();
+      const payload = this.buildVehiclePayload();
+      const navPayload = this.buildNavPayload();
       if (!payload) {
+        this.sendNavPayload(navPayload);
         this.show();
         return;
       }
       const now = Date.now();
-      if (now - this.lastSendAt < SEND_INTERVAL_MS - 80) return;
+      if (now - this.lastSendAt < SEND_INTERVAL_MS - 80) {
+        this.sendNavPayload(navPayload);
+        return;
+      }
       const sig = [
         payload.lat.toFixed(5),
         payload.lon.toFixed(5),
         Math.round(payload.heading),
         Math.round(payload.speed),
       ].join("|");
-      if (sig === this.lastPayloadSig && now - this.lastSendAt < SEND_INTERVAL_MS * 4) return;
+      if (sig === this.lastPayloadSig && now - this.lastSendAt < SEND_INTERVAL_MS * 4) {
+        this.sendNavPayload(navPayload);
+        return;
+      }
       this.lastPayloadSig = sig;
       this.lastSendAt = now;
       this.frame.contentWindow.postMessage(payload, this.targetOrigin);
+      this.sendNavPayload(navPayload);
       this.show();
     }
 

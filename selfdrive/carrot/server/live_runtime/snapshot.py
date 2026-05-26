@@ -454,6 +454,19 @@ def _build_carrot(service: Any, previous: dict[str, Any] | None = None) -> dict[
   p["xPosLon"] = safe_float(safe_get(service, "xPosLon"))
   p["xPosAngle"] = safe_float(safe_get(service, "xPosAngle"))
   p["xPosSpeed"] = safe_float(safe_get(service, "xPosSpeed"))
+  p["xTurnInfo"] = safe_int(safe_get(service, "xTurnInfo"))
+  p["xDistToTurn"] = safe_int(safe_get(service, "xDistToTurn"))
+  p["xTurnCountDown"] = safe_int(safe_get(service, "xTurnCountDown"))
+  p["szTBTMainText"] = safe_text(safe_get(service, "szTBTMainText"))
+  p["szPosRoadName"] = safe_text(safe_get(service, "szPosRoadName"))
+  p["nGoPosDist"] = safe_int(safe_get(service, "nGoPosDist"))
+  p["nGoPosTime"] = safe_int(safe_get(service, "nGoPosTime"))
+  p["xSpdType"] = safe_int(safe_get(service, "xSpdType"))
+  p["xSpdLimit"] = safe_int(safe_get(service, "xSpdLimit"))
+  p["xSpdDist"] = safe_int(safe_get(service, "xSpdDist"))
+  p["xSpdCountDown"] = safe_int(safe_get(service, "xSpdCountDown"))
+  p["szSdiDescr"] = safe_text(safe_get(service, "szSdiDescr"))
+  p["naviPaths"] = safe_text(safe_get(service, "naviPaths"))
   return p
 
 

@@ -11,6 +11,7 @@
 
   const root = document.getElementById("kmapRoot");
   const kakaoMapEl = document.getElementById("kakaoMap");
+  const overlayCanvas = document.getElementById("overlayCanvas");
   const surface = document.getElementById("mapSurface");
   const marker = document.getElementById("vehicleMarker");
   const statusText = document.getElementById("statusText");
@@ -35,6 +36,20 @@
     status: "idle",
     error: "",
     sdkLoadedAt: 0,
+  };
+
+  const navState = {
+    active: false,
+    path: "",
+    points: [],
+    road: "",
+    turn: null,
+    goal: null,
+    sdi: null,
+    dirty: true,
+    lastViewRange: 0,
+    lastCanvasWidth: 0,
+    lastCanvasHeight: 0,
   };
 
   // RAF-driven interpolation state. `display` is what's currently on screen.
@@ -80,6 +95,135 @@
     if (speed >= 25) return "city";
     if (speed >= 4) return "slow";
     return "parked";
+  }
+
+  function viewRangeMeters(speedKph) {
+    if (speedKph >= 100) return 400;
+    if (speedKph >= 60) return 280;
+    if (speedKph >= 30) return 200;
+    return 140;
+  }
+
+  function resizeOverlayCanvas() {
+    if (!overlayCanvas) return false;
+    const rect = overlayCanvas.getBoundingClientRect();
+    const cssWidth = Math.max(1, Math.round(rect.width));
+    const cssHeight = Math.max(1, Math.round(rect.height));
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.round(cssWidth * dpr);
+    const height = Math.round(cssHeight * dpr);
+    if (overlayCanvas.width === width && overlayCanvas.height === height) return false;
+    overlayCanvas.width = width;
+    overlayCanvas.height = height;
+    navState.lastCanvasWidth = cssWidth;
+    navState.lastCanvasHeight = cssHeight;
+    navState.dirty = true;
+    return true;
+  }
+
+  function parsePath(path) {
+    if (!path) return [];
+    const points = [];
+    const chunks = String(path).split(";");
+    for (const chunk of chunks) {
+      if (!chunk) continue;
+      const parts = chunk.split(",");
+      if (parts.length < 2) continue;
+      const x = finiteNumber(parts[0]);
+      const y = finiteNumber(parts[1]);
+      const d = finiteNumber(parts[2]);
+      if (x === null || y === null) continue;
+      if (Math.abs(x) > 80 || y < -20 || y > 1200) continue;
+      points.push({ x, y, d: d === null ? y : d });
+      if (points.length >= 160) break;
+    }
+    return points;
+  }
+
+  function setNav(payload) {
+    const path = String(payload.path || "").trim();
+    navState.active = Boolean(payload.active) && path.length > 0;
+    navState.path = path;
+    navState.points = navState.active ? parsePath(path) : [];
+    navState.road = String(payload.road || "");
+    navState.turn = payload.turn || null;
+    navState.goal = payload.goal || null;
+    navState.sdi = payload.sdi || null;
+    navState.dirty = true;
+    renderOverlay();
+    updateStatus();
+  }
+
+  function clearOverlay(ctx, width, height) {
+    ctx.clearRect(0, 0, width, height);
+  }
+
+  function renderOverlay() {
+    if (!overlayCanvas) return;
+    const resized = resizeOverlayCanvas();
+    const ctx = overlayCanvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const width = overlayCanvas.width / dpr;
+    const height = overlayCanvas.height / dpr;
+    const viewRange = viewRangeMeters(state.speed);
+    if (Math.abs(viewRange - navState.lastViewRange) > 1) {
+      navState.lastViewRange = viewRange;
+      navState.dirty = true;
+    }
+    if (!navState.dirty && !resized) return;
+
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    clearOverlay(ctx, width, height);
+    if (!navState.active || navState.points.length < 2) {
+      ctx.restore();
+      navState.dirty = false;
+      return;
+    }
+
+    const cx = width / 2;
+    const cy = height / 2;
+    const pxPerMeter = height / viewRange;
+    const maxY = viewRange * 0.66;
+    const minY = -viewRange * 0.18;
+    const visible = navState.points.filter((point) => point.y >= minY && point.y <= maxY);
+    if (visible.length < 2) {
+      ctx.restore();
+      navState.dirty = false;
+      return;
+    }
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    visible.forEach((point, index) => {
+      const x = cx + point.x * pxPerMeter;
+      const y = cy - point.y * pxPerMeter;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = "rgba(0, 0, 0, .55)";
+    ctx.lineWidth = Math.max(7, Math.min(13, width * 0.026));
+    ctx.stroke();
+
+    ctx.beginPath();
+    visible.forEach((point, index) => {
+      const x = cx + point.x * pxPerMeter;
+      const y = cy - point.y * pxPerMeter;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    const gradient = ctx.createLinearGradient(cx, cy, cx, Math.max(0, cy - maxY * pxPerMeter));
+    gradient.addColorStop(0, "rgba(255, 184, 68, .98)");
+    gradient.addColorStop(1, "rgba(255, 92, 48, .90)");
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = Math.max(4, Math.min(8, width * 0.016));
+    ctx.stroke();
+
+    ctx.restore();
+    navState.dirty = false;
   }
 
   function relayoutKakaoMap() {
@@ -149,6 +293,7 @@
       `L${state.level}`,
       `${age}s`,
     ];
+    if (navState.active) parts.push(`P${navState.points.length}`);
     if (state.error) parts.push(state.error);
     statusText.textContent = parts.join(" / ");
   }
@@ -176,6 +321,7 @@
     applyMarkerRotation(interp.display.heading);
     updateMockPan(interp.display.lat, interp.display.lon);
     applyKakaoPosition(interp.display.lat, interp.display.lon);
+    renderOverlay();
   }
 
   function ensureRenderLoop() {
@@ -349,8 +495,12 @@
 
   function handleMessage(event) {
     const data = event.data || {};
-    if (data.source !== "carrot-vision" || data.type !== "vehicle") return;
-    applyVehicle(data);
+    if (data.source !== "carrot-vision") return;
+    if (data.type === "vehicle") {
+      applyVehicle(data);
+    } else if (data.type === "nav") {
+      setNav(data);
+    }
   }
 
   function postReady() {
@@ -425,7 +575,12 @@
     root.dataset.status = "waiting";
     applyMotionState();
     bindMapResizeObserver();
-    window.addEventListener("resize", relayoutKakaoMap);
+    resizeOverlayCanvas();
+    window.addEventListener("resize", () => {
+      relayoutKakaoMap();
+      navState.dirty = true;
+      renderOverlay();
+    });
     await initProvider();
     updateStatus();
     postReady();

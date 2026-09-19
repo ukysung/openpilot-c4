@@ -423,6 +423,26 @@ class CarState(CarStateBase):
           add_and_cache(self.cp, "CRUISE_BUTTONS_ALT2", "cruise_buttons_alt2", ignore_counter = True)
           add_and_cache(self.cp, "TRAILER_STATUS", "trailer_status", ignore_counter = True)
 
+    # Catch CAN-FD camera messages that first appear after the one-shot scan.
+    if canfd and self.controls_ready_count > 122 and self.cp_cam is not None:
+      for name, attr in (
+        ("ADRV_0x161", "adrv_0x161"),
+        ("ADRV_0x200", "adrv_0x200"),
+        ("ADRV_0x1ea", "adrv_0x1ea"),
+        ("ADRV_0x160", "adrv_0x160"),
+        ("CCNC_0x162", "ccnc_0x162"),
+      ):
+        if getattr(self, attr) is not None:
+          continue
+
+        msg = self.cp_cam.dbc.name_to_msg.get(name)
+        if msg is None or msg.address not in self.cp_cam.seen_addresses:
+          continue
+        if msg.address not in self.cp_cam.addresses:
+          self.cp_cam._add_message(name)
+        if name in self.cp_cam.vl:
+          setattr(self, attr, self.cp_cam.vl[name])
+
 
 
 

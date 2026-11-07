@@ -42,6 +42,15 @@ class TrafficState(Enum):
 
 A_CRUISE_MAX_BP_CARROT = [0., 10 * CV.KPH_TO_MS, 40 * CV.KPH_TO_MS, 60 * CV.KPH_TO_MS, 80 * CV.KPH_TO_MS, 110 * CV.KPH_TO_MS, 140 * CV.KPH_TO_MS]
 
+# 선행차 속도(m/s): 2 이하에서 정지차 comfort brake, 8 이상에서 기존 comfort brake
+STOPPED_LEAD_V_BP = [2.0, 8.0]
+
+def get_stopped_lead_comfort_brake(comfort_brake, lead_status, v_lead, stopped_lead_comfort_brake):
+  # 정지/저속 선행차일 때만 comfort brake를 낮춰 더 멀리서부터 감속 시작, 주행중인 선행차의 차간거리는 그대로
+  if not lead_status or stopped_lead_comfort_brake <= 0.0 or stopped_lead_comfort_brake >= comfort_brake:
+    return comfort_brake
+  return float(np.interp(v_lead, STOPPED_LEAD_V_BP, [stopped_lead_comfort_brake, comfort_brake]))
+
 class CarrotPlanner:
   def __init__(self):
     self.params = Params()
@@ -83,6 +92,7 @@ class CarrotPlanner:
     self.trafficStopDistanceAdjust = 2.5 #params.get_float("TrafficStopDistanceAdjust") / 100.
     self.comfortBrake = 2.4
     self.comfort_brake = self.comfortBrake
+    self.stoppedLeadComfortBrake = self.comfortBrake
 
     self.soft_hold_active = 0
     self.events = Events()
@@ -178,6 +188,7 @@ class CarrotPlanner:
     elif self.params_count == 40:
       self.stop_distance = self.params.get_float("StopDistanceCarrot") / 100.
       self.j_lead_factor = self.params.get_float("JLeadFactor3") / 100.
+      self.stoppedLeadComfortBrake = self.params.get_float("StoppedLeadComfortBrake") / 100.
       self.eco_over_speed = self.params.get_int("CruiseEcoControl")
       self.autoNaviSpeedDecelRate = float(self.params.get_int("AutoNaviSpeedDecelRate")) * 0.01
       self.aChangeCostStarting = self.params.get_float("AChangeCostStarting")
@@ -595,6 +606,7 @@ class CarrotPlanner:
       mode = 'blended' if self.xState in [XState.e2ePrepare] else 'acc'
 
     self.comfort_brake *= self.mySafeFactor
+    self.comfort_brake = get_stopped_lead_comfort_brake(self.comfort_brake, leadOne.status, leadOne.vLead, self.stoppedLeadComfortBrake)
     self.actual_stop_distance = max(0, self.actual_stop_distance - (v_ego * DT_MDL))
 
     if stop_model_x == 1000.0: ##  e2eCruise, lead�ΰ��

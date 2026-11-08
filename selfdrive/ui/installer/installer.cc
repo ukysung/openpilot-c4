@@ -18,8 +18,12 @@ std::string get_str(std::string const s) {
   return s.substr(0, pos);
 }
 
+#ifndef GIT_URL_STR
+#define GIT_URL_STR "https://github.com/commaai/openpilot.git"
+#endif
+
 // Leave some extra space for the fork installer
-const std::string GIT_URL = get_str("https://github.com/commaai/openpilot.git" "?                                                                ");
+const std::string GIT_URL = get_str(GIT_URL_STR "?                                                                ");
 const std::string BRANCH_STR = get_str(BRANCH "?                                                                ");
 
 #define GIT_SSH_URL "git@github.com:commaai/openpilot.git"
@@ -144,6 +148,8 @@ int cachedFetch(const std::string &cache) {
   LOGD("Fetching with cache: %s", cache.c_str());
 
   run(util::string_format("cp -rp %s %s", cache.c_str(), TMP_INSTALL_PATH).c_str());
+  // the cache may come from a different repo (e.g. stock openpilot), so point origin at ours before fetching
+  run(util::string_format("cd %s && git remote set-url origin %s", TMP_INSTALL_PATH, GIT_URL.c_str()).c_str());
   run(util::string_format("cd %s && git remote set-branches --add origin %s", TMP_INSTALL_PATH, migrated_branch.c_str()).c_str());
 
   renderProgress(10);

@@ -30,10 +30,12 @@ if GetOption('extras') and arch == "larch64":
 
   release = "release3"
   installers = [
-    ("openpilot", release),
-    ("openpilot_test", f"{release}-staging"),
-    ("openpilot_nightly", "nightly"),
-    ("openpilot_internal", "nightly-dev"),
+    ("openpilot", release, None),
+    ("openpilot_test", f"{release}-staging", None),
+    ("openpilot_nightly", "nightly", None),
+    ("openpilot_internal", "nightly-dev", None),
+    # served from https://i.bomcat.net/carrot
+    ("carrot", "carrot", "https://github.com/ukysung/openpilot-c4.git"),
   ]
 
   cont = raylib_env.Command("installer/continue_openpilot.o", "installer/continue_openpilot.sh",
@@ -44,8 +46,10 @@ if GetOption('extras') and arch == "larch64":
                               "ld -r -b binary -o $TARGET $SOURCE")
   inter_light = raylib_env.Command("installer/inter_light.o", "../assets/fonts/Inter-Light.ttf",
                               "ld -r -b binary -o $TARGET $SOURCE")
-  for name, branch in installers:
+  for name, branch, git_url in installers:
     d = {'BRANCH': f"'\"{branch}\"'"}
+    if git_url is not None:
+      d['GIT_URL_STR'] = f"'\"{git_url}\"'"
     if "internal" in name:
       d['INTERNAL'] = "1"
 

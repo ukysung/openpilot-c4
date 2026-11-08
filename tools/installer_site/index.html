@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>carrot 설치</title>
+  <style>
+    :root { --bg: #ffffff; --fg: #1a1a1a; --muted: #5f6368; --code-bg: #f1f3f4; --accent: #465beA; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #121212; --fg: #e8eaed; --muted: #9aa0a6; --code-bg: #202124; --accent: #8ab4f8; }
+    }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 32px 16px; }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; }
+    p, li { color: var(--muted); }
+    code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; color: var(--fg); }
+    .url { display: block; font-size: 1.4rem; padding: 12px 16px; margin: 16px 0; text-align: center; color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>carrot 설치</h1>
+    <p>comma 기기를 초기화한 뒤 설치 화면에서 <b>Custom Software</b>를 고르고 아래 주소를 입력하세요.</p>
+    <code class="url">i.bomcat.net/carrot</code>
+    <ol>
+      <li>설치 프로그램이 <code>github.com/ukysung/openpilot-c4</code>의 <code>carrot</code> 브랜치를 내려받습니다.</li>
+      <li>설치에는 Wi-Fi 연결이 필요하고 몇 분 정도 걸립니다.</li>
+      <li>carrot은 comma.ai 공식 배포판이 아닙니다. 설치 후에는 언제든 직접 차량을 제어할 수 있는 상태에서 동작을 확인하세요.</li>
+    </ol>
+  </main>
+</body>
+</html>

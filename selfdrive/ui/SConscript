@@ -34,7 +34,7 @@ if GetOption('extras') and arch == "larch64":
     ("openpilot_test", f"{release}-staging", None),
     ("openpilot_nightly", "nightly", None),
     ("openpilot_internal", "nightly-dev", None),
-    # served from https://i.bomcat.net/carrot
+    # served from https://i.bombcat.net/carrot
     ("carrot", "carrot", "https://github.com/ukysung/openpilot-c4.git"),
   ]
 

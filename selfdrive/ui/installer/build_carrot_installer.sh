@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the carrot installer (served from https://i.bomcat.net/carrot) on a comma device.
+# Build the carrot installer (served from https://i.bombcat.net/carrot) on a comma device.
 #
 # Run on the device, ideally offroad:
 #   bash /data/openpilot/selfdrive/ui/installer/build_carrot_installer.sh
@@ -84,4 +84,4 @@ cp "$TARGET" "$OUT"
 echo
 echo "==> done: $OUT ($(stat -c %s "$OUT") bytes)"
 echo "Copy it to your PC, e.g.:  scp comma@<device-ip>:$OUT ./carrot"
-echo "Then upload it as the file named 'carrot' at the root of i.bomcat.net."
+echo "Then upload it as the file named 'carrot' at the root of i.bombcat.net."

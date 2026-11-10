@@ -9,7 +9,7 @@
         "language": "c++",
         "name": "common.params_pyx",
         "sources": [
-            "/data/openpilot/common/params_pyx.pyx"
+            "/data/pbuild/common/params_pyx.pyx"
         ]
     },
     "module_name": "common.params_pyx"

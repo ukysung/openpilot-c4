@@ -1,3 +1,2 @@
-# built installer binaries (see selfdrive/ui/installer/build_stable_installer.sh)
-carrot
+# built installer binary (see selfdrive/ui/installer/build_stable_installer.sh)
 stable

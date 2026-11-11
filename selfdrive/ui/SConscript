@@ -34,8 +34,8 @@ if GetOption('extras') and arch == "larch64":
     ("openpilot_test", f"{release}-staging", None),
     ("openpilot_nightly", "nightly", None),
     ("openpilot_internal", "nightly-dev", None),
-    # served from https://i.bombcat.net/carrot
-    ("carrot", "carrot", "https://github.com/ukysung/openpilot-c4.git"),
+    # served from https://i.bombcat.net/stable
+    ("stable", "stable", "https://github.com/ukysung/openpilot-c4.git"),
   ]
 
   cont = raylib_env.Command("installer/continue_openpilot.o", "installer/continue_openpilot.sh",

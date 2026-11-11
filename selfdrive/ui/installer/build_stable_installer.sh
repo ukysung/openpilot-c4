@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Build the carrot installer (served from https://i.bombcat.net/carrot) on a comma device.
+# Build the stable installer (served from https://i.bombcat.net/stable) on a comma device.
 #
 # Run on the device, ideally offroad:
-#   bash /data/openpilot/selfdrive/ui/installer/build_carrot_installer.sh
+#   bash /data/openpilot/selfdrive/ui/installer/build_stable_installer.sh
 #
 # Builds in a temporary git worktree so the running /data/openpilot is not touched.
-# Output: /data/installer_carrot
+# Output: /data/installer_stable
 set -e
 
 SRC="${SRC:-/data/openpilot}"
 BUILD="${BUILD:-/data/installer_build}"
-OUT="${OUT:-/data/installer_carrot}"
-TARGET="selfdrive/ui/installer/installers/installer_carrot"
+OUT="${OUT:-/data/installer_stable}"
+TARGET="selfdrive/ui/installer/installers/installer_stable"
 RAYLIB_COMMIT="3425bd9d1fb292ede4d80f97a1f4f258f614cffc"  # keep in line with third_party/raylib/build.sh
 
 if [ ! -f /TICI ]; then
@@ -19,8 +19,8 @@ if [ ! -f /TICI ]; then
   exit 1
 fi
 
-if ! grep -q '"carrot", "carrot"' "$SRC/selfdrive/ui/SConscript"; then
-  echo "$SRC does not have the carrot installer target yet. Update the device to the latest carrot branch first."
+if ! grep -q '"stable", "stable"' "$SRC/selfdrive/ui/SConscript"; then
+  echo "$SRC does not have the stable installer target yet. Update the device to the latest stable branch first."
   exit 1
 fi
 
@@ -71,7 +71,7 @@ ld -r -b binary -o "$OBJ/inter_bold.o" selfdrive/assets/fonts/Inter-Bold.ttf
 ld -r -b binary -o "$OBJ/inter_light.o" selfdrive/assets/fonts/Inter-Light.ttf
 
 g++ -std=c++1z -O2 -fPIC \
-  -DBRANCH='"carrot"' -DGIT_URL_STR='"https://github.com/ukysung/openpilot-c4.git"' \
+  -DBRANCH='"stable"' -DGIT_URL_STR='"https://github.com/ukysung/openpilot-c4.git"' \
   -I. -Imsgq -Ithird_party -Ithird_party/json11 -Ithird_party/linux/include -Ithird_party/raylib/include $PKG_FLAGS \
   -o "$TARGET" selfdrive/ui/installer/installer.cc "$OBJ"/*.o \
   -Lcommon -Lthird_party -L"$RAYLIB_DIR/larch64" $PKG_FLAGS \
@@ -83,5 +83,5 @@ grep -aq "https://github.com/ukysung/openpilot-c4.git?" "$TARGET" || { echo "git
 cp "$TARGET" "$OUT"
 echo
 echo "==> done: $OUT ($(stat -c %s "$OUT") bytes)"
-echo "Copy it to your PC, e.g.:  scp comma@<device-ip>:$OUT ./carrot"
-echo "Then upload it as the file named 'carrot' at the root of i.bombcat.net."
+echo "Copy it to your PC, e.g.:  scp comma@<device-ip>:$OUT ./stable"
+echo "Then upload it as the file named 'stable' at the root of i.bombcat.net."

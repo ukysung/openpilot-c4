@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Check an installer binary before uploading it, e.g.:
 
-  python3 selfdrive/ui/installer/verify_installer.py carrot
+  python3 selfdrive/ui/installer/verify_installer.py stable
 """
 import argparse
 import struct
 import sys
 
 DEFAULT_GIT_URL = "https://github.com/ukysung/openpilot-c4.git"
-DEFAULT_BRANCH = "carrot"
+DEFAULT_BRANCH = "stable"
 EM_AARCH64 = 183
 
 

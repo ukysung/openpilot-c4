@@ -14,6 +14,7 @@ from openpilot.selfdrive.carrot.t_follow import (
 )
 from openpilot.selfdrive.carrot.radar_motion.lane_change_gap import LaneChangeGapPlan, LaneChangeGapTracker
 from openpilot.selfdrive.carrot.driving_mode import DrivingMode, DrivingModeDetector, get_mode_lead_response
+from openpilot.selfdrive.carrot.stopped_lead import get_stopped_lead_comfort_brake
 from openpilot.selfdrive.carrot.traffic_stop import TrafficStopModelLeadMatcher, is_traffic_stop_entry_allowed
 from openpilot.selfdrive.controls.radar_constants import RADAR_TO_CAMERA
 from openpilot.selfdrive.selfdrived.events import Events
@@ -102,6 +103,7 @@ class CarrotPlanner:
     self.trafficStopDistanceAdjust = 2.5 #params.get_float("TrafficStopDistanceAdjust") / 100.
     self.comfortBrake = 2.4
     self.comfort_brake = self.comfortBrake
+    self.stoppedLeadComfortBrake = self.comfortBrake
 
     self.soft_hold_active = 0
     self.events = Events()
@@ -201,6 +203,7 @@ class CarrotPlanner:
       self.cruiseMaxVals6 = self.params.get_float("CruiseMaxVals6") / 100.
     elif self.params_count == 40:
       self.stop_distance = self.params.get_float("StopDistanceCarrot") / 100.
+      self.stoppedLeadComfortBrake = self.params.get_float("StoppedLeadComfortBrake") / 100.
       self.eco_over_speed = self.params.get_int("CruiseEcoControl")
       self.autoNaviSpeedDecelRate = float(self.params.get_int("AutoNaviSpeedDecelRate")) * 0.01
       self.aChangeCostStarting = self.params.get_float("AChangeCostStarting")
@@ -589,6 +592,9 @@ class CarrotPlanner:
     # steady-state spacing through tFollow.  Keep the MPC braking-distance model
     # independent of mode so its v^2 term does not create a large high-speed gap
     # jump (Safe/Eco max acceleration still uses mySafeFactor).
+    # Stopped/slow leads only: brake earlier and gentler; moving-lead spacing is unchanged.
+    self.comfort_brake = get_stopped_lead_comfort_brake(self.comfort_brake, radarstate.leadOne.status,
+                                                        radarstate.leadOne.vLead, self.stoppedLeadComfortBrake)
     self.actual_stop_distance = max(0, self.actual_stop_distance - (v_ego * DT_MDL))
 
     if stop_model_x == 1000.0:  # e2eCruise 또는 lead 상태
